@@ -1,0 +1,534 @@
+#!/bin/bash
+#
+# A test framework for Bash scripts.
+#
+# To see the full documentation, run this script passing
+# the `--help` flag.
+#
+
+# Function: usage
+#
+#   Echoes usage string to stdout.
+#
+function usage {
+  local name="$(basename "$0")"
+cat <<EOF
+NAME
+
+  $name - A test framework for Bash scripts.
+
+SYNOPSIS
+
+  $name [options] {test}...
+
+DESCRIPTION
+
+  Runs each test file passed as argument. Test files are shell (Bash) scripts that are
+  provided with test funcions for performing checks and reporting test results.
+
+  Each test file is sourced by this program (which is itself a Bash script), in an
+  environment where the test functions are present; therefore tests do not need to
+  source (import) anything.
+
+TEST FILES
+  
+  This is an example test file:
+
+    # file: sample-test-01.sh
+    #------------------------
+
+    # First, define the actual functions we want to test, or helper functions that
+    # encapsulate what we want to test. Here they are just trivial one-liners.
+
+    function some_output { echo -n "the output: \$1"; }
+    function some_error  { echo -n "the error: \$1" >&2 ; }
+    function succeeds    { return 0; }
+    function fails       { return 1; }
+
+    # Provide a general description for the test, using the provided 'describe' function:
+    describe "A sample test file"
+    
+    # Finally, run the actual checks by means of the provided 'assert' function, which
+    # runs the command passed after '--' and checks any combination of stdout / stderr /
+    # retcode.
+
+    assert "Check stdout" -o 'the output: foo' -- some_output foo
+    assert "Check stderr" -e 'the error: foo'  -- some_error foo
+    assert "Is retcode zero"     -- succeeds
+    assert "Is retcode one" -r 1 -- fails
+    #------------------------
+
+OPTIONS
+
+  --help   Print this message and exit.
+  --debug  Run the tests in debug mode, printing additional messages.
+    
+ENVIRONMENT
+
+  TEST_DEBUG
+    Setting this var to 1 is equivalent to passing option '--debug'.
+  TEST_OUT_DIR
+    Where to write test output, if not provided a temporary directory is used.
+
+  These variables are always availabe in test files.
+
+EXIT CODE
+
+  0 - If all tests passed
+  1 - If some tests failed
+  2 - In case of error
+
+EOF
+}
+
+# Config
+set -u
+
+# Globals
+test_list=()
+
+# Set defaults for external variables not given:
+: "${TEST_DEBUG:=}"
+: "${TEST_OUT_DIR:=}"
+
+# Executes each test passed as argument in the command line
+function run_all {
+  parse_cmdline "$@"
+
+  if [ "${#test_list[@]}" = 0 ]; then
+    abort "No tests given. Pass '--help' to see usage."
+  fi
+
+  case "${TEST_OUT_DIR:-}" in '')
+    TEST_OUT_DIR=`create_temp_dir /tmp/command-verify.XXXX` || exit 1
+  esac
+  debug "Output dir: $TEST_OUT_DIR"
+
+  # Close stdin for the current process to avoid hangs, since test should not
+  # rely on it. Tests must be self-contained and provide input to stdin, if
+  # needed, to the processes they are testing.
+  exec 0<&-
+
+  # Execute each test script, counting the number of failed tests
+  local failures=0
+  local script
+  for script in "${test_list[@]}"; do
+    if ! run_test "$script"; then
+      failures=$((failures + 1))
+    fi
+  done
+
+  # Set return code:
+  [ "$failures" == 0 ]
+}
+
+
+# Parses the command line, setting globals.
+#
+function parse_cmdline {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --help)
+        usage ; exit 0
+      ;;
+      --debug)
+        TEST_DEBUG=1
+      ;;
+      -*)
+        abort "Unknown option: '$arg'"
+      ;;
+      *)
+        test_list+=( "$arg" )
+      ;;
+    esac
+  done
+}
+
+
+# Writes a comment in the test output
+function note {
+  echo "# $1"
+}
+
+
+# Writes a message if in debug mode
+function debug {
+  [ -n "$TEST_DEBUG" ] || return
+  echo "# DBG: $*" >&2
+}
+
+
+# Executes a single test script
+#
+function run_test {
+  local script=$1
+
+  note "RUNNING: $script"
+  if $SHELL "$script"; then
+    echo "All tests passed in: '$script'"
+    return 0
+  else
+    echo "ERROR: The execution of the test script failed: '$script'"
+    return 1
+  fi
+}
+
+
+# Function: describe (API)
+#
+#   Starts a test case.
+#
+function describe {
+  local desc=$1
+  echo "$desc"
+}
+
+
+function test_error() {
+  echo "TEST ERROR: $@" >&2
+  exit 3
+}
+
+
+function abort() {
+  echo "ERROR: $@" >&2
+  exit 2
+}
+
+
+# Function: assert (API)
+#
+#   Performs a basic assertion by comparing a command's output against expected values.
+#   By default, empty strings are expected from `stdout` and `stderr`, other values can
+#   be specified independently for each of them. A zero return code is also expected by
+#   default, but a different value can be specified.
+#
+# Synopsys:
+#
+#   assert [-d] <description> [Options] -- <command>...
+#
+# Params:
+#
+#   <description> - A message to describe the assertion being tested (mandatory).
+#   <command>...  - Command line to test (command and arguments). Must be preceeded by --.
+#
+# Options:
+#
+#   -d <description>
+#     Since the description is mandatory, specifying `-d` before it is optional.
+#     If `-d` is not given, then <description> must be the first argument.
+#
+#   (-o | -O) <expected_output>
+#     Compare the <command>'s stdout against <expected_output>, which will be
+#     interpreted as a literal string (-o) or as a file path to read (-O).
+#
+#   (-e | -E) <expected_error>
+#     Like (-o, -O) but compare <command>'s stderr.
+#     If not given, stderr will be expected to be the empty string ('').
+#
+#   (-r | -R) <expected_retcode>
+#     Like (-o, -O) but compare <command>'s return code.
+#     If not given, a 0 (zero) return code will be expected.
+#
+#   --
+#     A literal argument '--' signals the end of option parsing.
+#     This argument is mandatory, the rest of the arguments following it are the command
+#     to test.
+#     
+# Environment:
+#
+#   TEST_NAME
+#     User defined test name; defaults to 'test'. Since all logs are numbered,
+#     you get test_01.out, test_02.out, ... if this var is not set.
+#
+#   TEST_OUT_DIR
+#     Directory where output files will be written to.
+#           
+# Output:
+#   
+#   A message representing the result of the test.
+#
+function assert {
+  local test_name='test'      # Set from env var TEST_NAME
+  local description=
+  local test_command=
+  #
+  declare -A expected_arg
+  declare -A expected_type
+  declare -A expected_value
+  declare -A expected_passed
+  declare -A expected_arg_type
+
+  expected_arg=(
+    [out]=
+    [err]=
+    [ret]=
+  )
+  expected_passed=(
+    [out]=
+    [err]=
+    [ret]=
+  )
+  expected_type=(
+    [out]='string'
+    [err]='string'
+    [ret]='string'
+  )
+  expected_value=(
+    [out]=''
+    [err]=''
+    [ret]=0
+  )
+
+  #
+  # Argument parsing
+  debug "Assert: $@"
+
+  # Check arguments
+  if [ "${#@}" -lt 2 ]; then
+    test_error "At least two arguments must be provided (description, command)."
+    return;
+  fi
+
+  local opt_key=''
+  local arg_count=0
+  local value_needed=0
+
+  for arg in "$@"; do
+
+    arg_count=$(( arg_count + 1 ))
+
+    if [ "$arg_count" = 1 ]; then
+      case "$arg" in
+        -*)
+          # An option was passed as first argument; do nothing here,
+          # will be processed next
+          ;;
+        *)
+          # Not an option, interpret as description
+          description="$arg"
+          continue
+      esac
+    fi
+
+    if [ "$value_needed" = 0 ]; then
+
+      case "$arg" in
+        --)
+          # Explicit start of command (should be the first case)
+          shift "$arg_count"
+          test_command="$@"
+          break
+          ;;
+        -*)
+          opt_key="$arg"
+          value_needed=1  # All options require a value.
+          ;;
+        *)
+          test_error \
+            "Invalid command-line argument given to the assert function: '$arg'," \
+            "(arg index: $arg_count)" \
+            "Command-line was: $@"
+          exit 3;
+          ;;
+      esac
+
+    else
+      value_needed=0
+
+      case "$opt_key" in
+        -d ) description="$arg" ;;
+          
+        -o | -e | -r ) exp_type='string' ;;&
+        -O | -E | -R ) exp_type='file'   ;;&
+
+        -o | -O) key_expect=out ;;
+        -e | -E) key_expect=err ;;
+        -r | -R) key_expect=ret ;;
+
+        *)
+          test_error "Invalid option: '$opt_key'"
+      esac
+
+      expected_passed[$key_expect]=1
+      expected_type[$key_expect]="$exp_type"
+      expected_arg[$key_expect]="$arg"
+    fi
+
+  done
+
+
+  if [ -z "$test_command" ]; then
+    test_error "Please specify a command to test."
+    return;
+  fi
+
+  debug "Command to test: $test_command"
+  
+  # Argument validation:
+
+  if [ "$value_needed" = 1 ]; then
+    test_error "Missing value for option: '$opt_key'"
+    return
+  fi
+
+  if [ -z "$description" ]; then
+    test_error "Please specify a description for the test case."
+    return;
+  fi
+
+
+  # Populate expected values for direct comparison:
+  #
+  for key_expect in out err ret; do
+
+    if [ -z "${expected_passed[$key_expect]}" ]; then
+      # Not passed by the user, keep default
+      continue
+    fi
+
+    exp_type="${expected_type[$key_expect]}"
+    exp_arg="${expected_arg[$key_expect]}"
+
+    case "$exp_type" in
+      string)
+        expected_value[$key_expect]="$exp_arg"
+        ;;
+      file)
+        expected_value[$key_expect]="`cat "$exp_arg"`"
+        if [ $? != 0 ]; then
+          test_error "Failed to read master file (type $key_expect) '$exp_arg': $!"
+          return
+        fi
+        ;;
+      *)
+        test_error "Invalid expected value type: '$exp_type'"
+        return
+    esac
+  done
+
+  if [ "${TEST_NAME+set}" = 'set' ]; then
+    test_name="$TEST_NAME"
+  else
+    test_name='test'
+  fi
+  debug "test_name set to: '$test_name'."
+
+  # Determine paths for output files
+  out_base="$TEST_OUT_DIR/$test_name"
+
+  declare -A outfile
+  outfile=(
+    [out]="`get_unique_file "$out_base" .out`"
+    [err]="`get_unique_file "$out_base" .err`"
+    [ret]="`get_unique_file "$out_base" .ret`"
+  )
+
+  debug "STDOUT will be saved to: '${outfile[out]}'."
+  debug "STDERR will be saved to: '${outfile[err]}'."
+  debug "RETCODE will be saved to: '${outfile[ret]}'."
+
+  # Execute the command to test in a subshell to avoid interferring with the
+  # testing framework. If stdin is provided to the invocation of this `assert`
+  # function, it can be consumed by $command, automatically.
+  # TODO: include timeout
+  # TODO: verify if speciall characters in $command do not cause problems
+  debug "Running test command ..."
+  ( $test_command > "${outfile[out]}" 2>"${outfile[err]}" )
+
+  # Save exit code
+  local ret_code="$?"
+  echo "$?" > "${outfile[ret]}"
+
+  local has_failed=
+
+  if [ "$ret_code" != "${expected_value[ret]}" ];then
+    has_failed=1
+    echo "Got return code '$ret_code', expected '${expected_value[ret]}'."
+  fi
+
+  for check in out err; do
+    local exp_str=${expected_value[$check]}
+    local dif=`diff <(echo -n "$exp_str") "${outfile[$check]}" 2>&1`
+    
+    if [ -n "$dif" ]; then
+      has_failed=1
+      echo
+      echo "Unexpected std$check:"
+      echo "----------"
+      echo "$dif"
+      echo "----------"
+      echo "[See: '${outfile[$check]}']"
+      echo
+    fi
+  done
+
+  if [ -n "$has_failed" ]; then
+    echo "FAILED $description"
+  else
+    echo "PASSED $description"
+  fi
+}
+
+
+# Function: create_temp_dir
+#
+#   Creates a temporary directory, trying with different methods.
+#
+function create_temp_dir()
+{
+  ( # Execute all commands in a subshell with stderr closed to reduce noise )
+    exec 2>&- 
+
+    template="$1"
+    mktemp=
+    dir=
+
+    if mktemp=`command -v mktemp`; then
+      if [ -n "$template" ] && dir=`$mktemp -d "$template"`; then
+        echo "$dir"
+      elif dir=`$mktemp -d`; then
+        echo "$dir"
+      fi
+    elif dir="/tmp/$template/`date +%s`" && [ !-d "$dir" ] && mkdir "$dir"; then
+      echo "$dir"
+    else
+      exit 1 
+    fi
+  ) || (
+    echo "ERROR: Failed to create temp dir" >&2
+    exit 1
+  )
+}
+
+
+function get_unique_file {
+  local name="$1"
+  local ext="$2"
+  local max_files=100
+
+  for ((i=0; i<$max_files; i++)); do
+    local candidate=`printf '%s%02d%s' "$name" $i "$ext"`
+    if [ ! -e "$candidate" ]; then
+      echo "$candidate" 
+      return
+    fi
+  done
+
+  test_error "TEST_ERROR: Could not determine a unique file name after $max_files attempts."
+}
+
+# Export all the variables and functions we want test files to have available.
+export TEST_DEBUG
+export TEST_OUT_DIR
+export -f get_unique_file
+export -f describe
+export -f test_error
+export -f debug
+export -f assert
+export -f note
+
+# Entry point
+run_all "$@"
+
