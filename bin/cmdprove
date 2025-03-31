@@ -5,6 +5,11 @@
 # To see the full documentation, run this script passing
 # the `--help` flag.
 #
+set -Eeu
+set -o pipefail
+trap 'echo "ERROR: An unrecoverable error occurred. Aborted." >&2; exit 3' EXIT
+shopt -s extglob
+#set -x
 
 # Function: usage
 #
@@ -13,89 +18,35 @@
 function usage {
   local name="$(basename "$0")"
 cat <<EOF
-NAME
-
-  $name - A test framework for Bash scripts.
-
-SYNOPSIS
-
-  $name [options] {test}...
-
-DESCRIPTION
-
-  Runs each test file passed as argument. Test files are shell (Bash) scripts that are
-  provided with test funcions for performing checks and reporting test results.
-
-  Each test file is sourced by this program (which is itself a Bash script), in an
-  environment where the test functions are present; therefore tests do not need to
-  source (import) anything.
-
-TEST FILES
-  
-  This is an example test file:
-
-    # file: sample-test-01.sh
-    #------------------------
-
-    # First, define the actual functions we want to test, or helper functions that
-    # encapsulate what we want to test. Here they are just trivial one-liners.
-
-    function some_output { echo -n "the output: \$1"; }
-    function some_error  { echo -n "the error: \$1" >&2 ; }
-    function succeeds    { return 0; }
-    function fails       { return 1; }
-
-    # Provide a general description for the test, using the provided 'describe' function:
-    describe "A sample test file"
-    
-    # Finally, run the actual checks by means of the provided 'assert' function, which
-    # runs the command passed after '--' and checks any combination of stdout / stderr /
-    # retcode.
-
-    assert "Check stdout" -o 'the output: foo' -- some_output foo
-    assert "Check stderr" -e 'the error: foo'  -- some_error foo
-    assert "Is retcode zero"     -- succeeds
-    assert "Is retcode one" -r 1 -- fails
-    #------------------------
-
-OPTIONS
-
-  --help   Print this message and exit.
-  --debug  Run the tests in debug mode, printing additional messages.
-    
-ENVIRONMENT
-
-  TEST_DEBUG
-    Setting this var to 1 is equivalent to passing option '--debug'.
-  TEST_OUT_DIR
-    Where to write test output, if not provided a temporary directory is used.
-
-  These variables are always availabe in test files.
-
-EXIT CODE
-
-  0 - If all tests passed
-  1 - If some tests failed
-  2 - In case of error
-
 EOF
 }
 
 # Config
 set -u
 
+#
 # Globals
-test_list=()
+
+# The list of test files to execute:
+test_file_list=()
+
+# The list of existing functions in the environment whose name matches the pattern for a
+# test function (used to exclude these from the test execution):
+declare -A existing_func_named_test
 
 # Set defaults for external variables not given:
+#
 : "${TEST_DEBUG:=}"
 : "${TEST_OUT_DIR:=}"
+# Functions whose name matches this pattern are considered tests:
+: "${TEST_FUNC_PATTERN:=test_*}"
+
 
 # Executes each test passed as argument in the command line
 function run_all {
   parse_cmdline "$@"
 
-  if [ "${#test_list[@]}" = 0 ]; then
+  if [ "${#test_file_list[@]}" = 0 ]; then
     abort "No tests given. Pass '--help' to see usage."
   fi
 
@@ -112,14 +63,140 @@ function run_all {
   # Execute each test script, counting the number of failed tests
   local failures=0
   local script
-  for script in "${test_list[@]}"; do
+  for script in "${test_file_list[@]}"; do
     if ! run_test "$script"; then
       failures=$((failures + 1))
     fi
   done
 
   # Set return code:
-  [ "$failures" == 0 ]
+  if [ "$failures" == 0 ]; then
+    terminate 0
+  else
+    terminate 1
+  fi
+}
+
+# Function: get_matching_functions {source_file} {func_name_pattern} {array_name}
+#
+#   Writes, to the array named `{array_name}`, the names of the shell functions existing
+#   in the environment whose name matche the shell pattern `{func_name_pattern}` and
+#   whose source file is `{source_file}`. Existing values in the output array are
+#   discarded.
+#
+function get_matching_functions {
+  local source_file="$1"
+  local func_name_patn="$2"
+  local -n matching_func_list="$3"
+
+  # Save state for the `extdebug` shell option and set it to get extended function info.
+  shopt -q extdebug
+  local orig_extdebug=$?
+  shopt -q -s extdebug
+
+  # Get the list of all declared functions whose name matches the given pattern.
+  local -a func_list
+  local -a func_entry
+  while read -r -a func_entry; do
+    local func_name="${func_entry[2]:-}"
+    case "$func_name" in $func_name_patn)
+      func_list+=( "$func_name" ) 
+    esac
+  done < <(declare -F)
+
+  # Mapping: function name => source line number
+  local -A func_line
+
+  # Get source file and line number for each of the functions
+  local func_name
+  for func_name in "${func_list[@]}"
+  do
+    local func_info="$(declare -F "$func_name")"
+
+    # `func_info` is of the form: 'myfunction 123 ./my file.sh'
+    # Will process it carefully to allow for spaces and other special characters in
+    # file names.
+
+    local -a info_words
+    info_words=( $func_info )
+
+    local err_pre="Internal: Invalid function declaration for '$func_name': '$func_info'"
+
+    [ "${#info_words[@]}" -lt 3 ] && \
+      test_error "$err_pre. Expected at least three fields, found ${#info_words[@]}."
+
+    [[ "${info_words[0]}" != "$func_name" ]] && \
+      test_error "$err_pre. First filed should match the function name."
+
+    [[ "${info_words[1]}" != +([0-9]) ]] && \
+      test_error "$err_pre. Second filed should be a positive decimal integer."
+    
+    local line_num="${info_words[1]}"
+
+    # The file name is everything after the function name and line number:
+    local file_start_char=$(( ${#func_name} + ${#line_num} + 2 ))
+    local file_name="${func_info:$file_start_char}"
+
+    # Discard functions not in the wanted file
+    [ "$file_name" == "$source_file" ] || continue
+
+    func_line[$func_name]="$line_num"
+  done
+
+  # Restore `extdebug` option
+  if [ "$orig_extdebug" = 1 ]; then
+    shopt -q -u extdebug
+  fi
+
+  sort_dict_keys_by_val 'func_line' 'matching_func_list'
+}
+
+
+# Function: sort_dict_keys_by_val {dict} {sorted_keys}
+#
+#   Sorts, in ascending order, the keys of dictionary named `{dict}` by their
+#   corresponding values.  The sorted keys are stored in the array named `{sorted_keys}`.
+#   Existing values in this array are removed.
+#
+function sort_dict_keys_by_val {
+  local -n dict="$1"
+  local -n keys="$2"
+
+  keys=( "${!dict[@]}" )
+
+  # Bubble sort
+  local n=${#keys[@]}
+  for ((i = 0; i < n-1; i++)); do
+    for ((j = 0; j < n-i-1; j++)); do
+      if [[ "${dict[${keys[j]}]}" -gt "${dict[${keys[j+1]}]}" ]]; then
+        # Swap the elements
+        local temp="${keys[j]}"
+        keys[j]="${keys[j+1]}"
+        keys[j+1]="$temp"
+      fi
+    done
+  done
+}
+
+
+# Function: get_matching_functions {fname_pattern} {dict_name}
+#
+#   Add, as keys in the dictionary named `{dict_name}`, the names of the functions
+#   existing in the environment whose name matches the pattern `{fname_pattern}`.
+#
+#   Values for the added keys are set to 1.
+#
+function _old_get_matching_functions {
+  local pattern="$1"
+  local -n dict="$2"
+
+  local -a func_entry
+  while read -r -a func_entry; do
+    local func_name="${func_entry[2]:-}"
+    case "$func_name" in $pattern)
+      dict[$func_name]=1
+    esac
+  done < <(declare -F)
 }
 
 
@@ -139,39 +216,60 @@ function parse_cmdline {
         abort "Unknown option: '$arg'"
       ;;
       *)
-        test_list+=( "$arg" )
+        test_file_list+=( "$arg" )
       ;;
     esac
   done
 }
 
 
-# Writes a comment in the test output
-function note {
-  echo "# $1"
-}
-
-
-# Writes a message if in debug mode
-function debug {
-  [ -n "$TEST_DEBUG" ] || return
-  echo "# DBG: $*" >&2
-}
-
-
-# Executes a single test script
+# Executes a single test file in a subshell.
 #
 function run_test {
-  local script=$1
+  local script="$1"
 
-  note "RUNNING: $script"
-  if $SHELL "$script"; then
-    echo "All tests passed in: '$script'"
-    return 0
-  else
-    echo "ERROR: The execution of the test script failed: '$script'"
-    return 1
+  [ -f "$script" ] || test_error "Test file not found: '$script'."
+
+  # Set explicit './' path prefix for relative script paths, so that
+  # `source` finds the right script:
+  if [ "${script:0:1}" != '/' ]; then
+    script="./$script"
   fi
+  
+  note "[RUNNING: $script]"
+
+  # On a separate shell process, source the test script and then execute
+  # our custom entry point:
+  "$SHELL" -c "_before_test_script; source '$script'; _after_test_script '$script'"
+  local rc=$?
+
+  # Check exit status
+  case "$rc" in
+    0) echo "All tests passed in: '$script'" ;;
+    1) echo "Some tests failed in: '$script'" ;;
+    3) echo "Test script did not finish (or missing invocation to 'done_testing')" ;;
+    *) echo "Unknown error when executing test script (retcode: $rc)." ;;
+  esac
+
+  return "$rc"
+}
+
+function _before_test_script {
+  set -u
+}
+
+function _after_test_script {
+  local script_path="$1"
+  local -a test_functions
+  get_matching_functions "$script_path" "$TEST_FUNC_PATTERN" 'test_functions'
+
+  local test_function
+  for test_function in "${test_functions[@]}"; do
+    _test_control begin_subtest "$test_function"
+    echo
+    "$test_function"
+    _test_control end_subtest
+  done
 }
 
 
@@ -180,8 +278,39 @@ function run_test {
 #   Starts a test case.
 #
 function describe {
-  local desc=$1
-  echo "$desc"
+  note "$1"
+}
+
+
+function repeat_string {
+  local string="$1"
+  local count="$2"
+
+  local idx=0
+  local result=
+  for (( idx=0 ; idx < count ; idx+=1 )); do
+    result="${result}${string}"
+  done
+
+  printf '%s' "$result"
+}
+
+
+function prefix_lines {
+  local prefix="$1"
+  local text="$2"
+  local line
+  
+  while IFS= read -r line || [ -n "$line" ]; do
+    echo "${prefix}${line}"
+  done <<< "$text"
+}
+
+
+# Writes a message if in debug mode
+function debug {
+  [ -n "$TEST_DEBUG" ] || return 0
+  echo "# DBG: $*" >&2
 }
 
 
@@ -252,10 +381,11 @@ function abort() {
 function assert {
   local test_name='test'      # Set from env var TEST_NAME
   local description=
-  local test_command=
+  local -a test_command
   #
   declare -A expected_arg
   declare -A expected_type
+  declare -A expected_cmp
   declare -A expected_value
   declare -A expected_passed
   declare -A expected_arg_type
@@ -279,6 +409,11 @@ function assert {
     [out]=''
     [err]=''
     [ret]=0
+  )
+  expected_cmp=(
+    [out]='diff'
+    [err]='diff'
+    [ret]='diff'
   )
 
   #
@@ -312,13 +447,17 @@ function assert {
       esac
     fi
 
+    local exp_type=
+    local exp_cmp=
+    local key_expect=
+
     if [ "$value_needed" = 0 ]; then
 
       case "$arg" in
         --)
           # Explicit start of command (should be the first case)
           shift "$arg_count"
-          test_command="$@"
+          test_command=( "$@" )
           break
           ;;
         -*)
@@ -340,31 +479,33 @@ function assert {
       case "$opt_key" in
         -d ) description="$arg" ;;
           
-        -o | -e | -r ) exp_type='string' ;;&
-        -O | -E | -R ) exp_type='file'   ;;&
+        -o | -e | -r ) exp_type='string'  ; exp_cmp='diff' ;;&
+        -O | -E | -R ) exp_type='file'    ; exp_cmp='diff' ;;&
+        -op | -ep )    exp_type='string'  ; exp_cmp='pattern' ;;&
 
-        -o | -O) key_expect=out ;;
-        -e | -E) key_expect=err ;;
+        -o | -op | -O) key_expect=out ;;
+        -e | -ep | -E) key_expect=err ;;
         -r | -R) key_expect=ret ;;
 
         *)
-          test_error "Invalid option: '$opt_key'"
+          test_error "Invalid option for 'assert()': '$opt_key'"
       esac
 
       expected_passed[$key_expect]=1
       expected_type[$key_expect]="$exp_type"
       expected_arg[$key_expect]="$arg"
+      expected_cmp[$key_expect]="$exp_cmp"
     fi
 
   done
 
 
-  if [ -z "$test_command" ]; then
+  if [ "${#test_command[@]}" == 0 ]; then
     test_error "Please specify a command to test."
     return;
   fi
 
-  debug "Command to test: $test_command"
+  debug "Command to test: ${test_command[@]}"
   
   # Argument validation:
 
@@ -378,6 +519,7 @@ function assert {
     return;
   fi
 
+  _test_control begin_subtest "$description"
 
   # Populate expected values for direct comparison:
   #
@@ -392,7 +534,7 @@ function assert {
     exp_arg="${expected_arg[$key_expect]}"
 
     case "$exp_type" in
-      string)
+      string|pattern)
         expected_value[$key_expect]="$exp_arg"
         ;;
       file)
@@ -435,40 +577,160 @@ function assert {
   # TODO: include timeout
   # TODO: verify if speciall characters in $command do not cause problems
   debug "Running test command ..."
-  ( $test_command > "${outfile[out]}" 2>"${outfile[err]}" )
+  ( "${test_command[@]}" > "${outfile[out]}" 2>"${outfile[err]}" )
 
   # Save exit code
   local ret_code="$?"
   echo "$?" > "${outfile[ret]}"
 
-  local has_failed=
-
-  if [ "$ret_code" != "${expected_value[ret]}" ];then
-    has_failed=1
-    echo "Got return code '$ret_code', expected '${expected_value[ret]}'."
+  if [ "$ret_code" == "${expected_value[ret]}" ]; then
+    _test_control set_pass 'Return code'
+  else
+    _test_control set_fail 'Return code'
+    note "Got return code '$ret_code', expected '${expected_value[ret]}'."
   fi
 
   for check in out err; do
     local exp_str=${expected_value[$check]}
-    local dif=`diff <(echo -n "$exp_str") "${outfile[$check]}" 2>&1`
-    
-    if [ -n "$dif" ]; then
-      has_failed=1
-      echo
-      echo "Unexpected std$check:"
-      echo "----------"
-      echo "$dif"
-      echo "----------"
-      echo "[See: '${outfile[$check]}']"
-      echo
+    local dif=$(_compare_files "${expected_cmp[$check]}"  <(echo -n "$exp_str") "${outfile[$check]}")
+
+    if [ -z "$dif" ]; then
+      _test_control set_pass "std$check"
+    else
+      _test_control set_fail "std$check"
+      note ''
+      note "Unexpected std$check:"
+      note -l 1 "----------"
+      note -l 1 "$dif"
+      note -l 1 "----------"
+      note -l 1 "[See: '${outfile[$check]}']"
+      note ''
     fi
   done
 
-  if [ -n "$has_failed" ]; then
-    echo "FAILED $description"
-  else
-    echo "PASSED $description"
+  _test_control end_subtest
+}
+
+
+function _test_control {
+  # Define globals if not present:
+  : ${_pass_count:=0}
+  : ${_fail_count:=0}
+  : ${_test_idx:=0}
+  : ${_test_level:=0}
+  declare -g -a _nested_test_counts
+  declare -g -a _nested_test_names
+
+  local command="${1:-}"; shift
+  local desc="${1:-}"
+
+  case "$command" in
+    begin_subtest)
+      # Print subtest banner
+      desc_label="${desc:+": $desc"}"
+      note "Subtest${desc_label}"
+
+      # Push current count
+      _nested_test_counts+=( "$_test_idx" )
+      _nested_test_names+=( "$desc" )
+      _test_level=$((_test_level + 1))
+      # Restart count
+      _test_idx=0
+    ;;
+    end_subtest)
+      if [ "$_test_level" == 0 ]; then
+        test_error "Subtest stack underflow"
+      fi
+      # Pop the last count
+      _test_idx="${_nested_test_counts[-1]}"
+      local _subtest_name="${_nested_test_names[-1]}"
+      unset _nested_test_counts[-1]
+      unset _nested_test_names[-1]
+      _test_level=$((_test_level - 1))
+
+      local rc=0
+      if [ "$_fail_count" -gt 0 ]; then
+        _test_control set_fail "$_subtest_name"
+        rc=1
+      else
+        _test_control set_pass "$_subtest_name"
+      fi
+      _test_control print_indent ""
+      return $rc
+    ;;
+    set_pass)
+      local desc_label="${desc:+ - $desc}"
+      _test_idx=$((_test_idx + 1))
+      _pass_count=$((_pass_count + 1))
+      _test_control print_indent "ok ${_test_idx}${desc_label}"
+    ;;
+    set_fail)
+      local desc_label="${desc:+ - $desc}"
+      _test_idx=$((_test_idx + 1))
+      _fail_count=$((_fail_count + 1))
+      _test_control print_indent "not ok ${_test_idx}${desc_label}"
+    ;;
+    print_indent)
+      local prefix="$(repeat_string '  ' "$_test_level")"
+      prefix_lines "$prefix" "$*"
+    ;;
+    *)
+      test_error "_test_control: Unknown subcommand: '$command'"
+    ;;
+  esac
+}
+
+
+# Function: note [-l {indent_level}] {multi_line}
+#
+#		Writes the {multi_line} string as a comment in the test output.
+#		An indentation level {indent_level} can be specified, default is 0.
+#   (This indentation is in addition to the current subtest indentation.)
+#
+function note {
+	local indent_level=0
+  if [ $# > 1 ] && [ "$1" == '-l' ]; then
+    indent_level="$2"; shift 2
   fi
+  local prefix="# $(repeat_string '  ' $indent_level)"
+  local note_prefixed="$(prefix_lines "$prefix" "$*")"
+	_test_control print_indent "$note_prefixed"
+}
+
+
+# Function: _compare_files {cmp_op} {file1} {file2}
+#
+#   Compares the contents of files {file1} and {file2} according to the comparison
+#   operator {cmp_op}, which can take any of the following values:
+#     'diff' - Perform and exact "diff" of the two files
+#
+function _compare_files {
+  local cmp="$1"
+  local exp="$2"
+  local out="$3"
+
+  case "$cmp" in
+    diff)
+      diff "$exp" "$out" 2>&1
+    ;;
+    pattern)
+      local patn="$(cat "$exp")"
+      local outs="$(cat "$out")"
+
+      case "$outs" in
+        *${patn}*)
+          return 0
+        ;;
+        *)
+          echo "Pattern not matched: '$patn'."
+          echo "Output was: '$outs'."
+        ;;
+      esac
+    ;;
+    *)
+      test_error "Unknown comparison operator: '$cmp'."
+    ;;
+  esac
 }
 
 
@@ -519,15 +781,40 @@ function get_unique_file {
   test_error "TEST_ERROR: Could not determine a unique file name after $max_files attempts."
 }
 
+
+# Finish program execution gracefully
+#
+function terminate {
+  # Use previous' command return code, unless $1 was given
+  local rc=$?
+  [ -n "${1:-}" ] && rc="$1"
+
+  trap : EXIT # Clean error msg just before exiting
+  exit "$rc"
+}
+
+
 # Export all the variables and functions we want test files to have available.
 export TEST_DEBUG
 export TEST_OUT_DIR
-export -f get_unique_file
+export TEST_FUNC_PATTERN
+#
 export -f describe
-export -f test_error
-export -f debug
 export -f assert
 export -f note
+export -f debug
+export -f test_error
+#
+export -f prefix_lines
+export -f repeat_string
+export -f sort_dict_keys_by_val
+export -f get_unique_file
+export -f get_matching_functions
+#
+export -f _compare_files
+export -f _test_control
+export -f _before_test_script
+export -f _after_test_script
 
 # Entry point
 run_all "$@"

@@ -1,20 +1,42 @@
 
 # External utilities needed by this Makefile:
-pandoc = pandoc#
+PANDOC_EXE = pandoc#
 
-doc_src = $(wildcard doc/*.md)#		# Markdown source files
-man_pages = $(doc_src:.md=.1)#		# Corresponding `man pages`
+# Source directories and file lists
+SRC_DOC_DIR = doc#
+DOC_SOURCES = $(wildcard $(SRC_DOC_DIR)/*.md)#
+
+# Output directories:
+DEST_DIR = build#
+DEST_MAN_DIR = $(DEST_DIR)/doc/man#
+DEST_TXT_DIR = $(DEST_DIR)/doc/txt#
+
+
+# Generated documentation in different formats, rendered from corresponding Markdown files:
+MAN_TARGETS = $(patsubst $(SRC_DOC_DIR)/%.md,$(DEST_MAN_DIR)/%.1,$(DOC_SOURCES))#
+TXT_TARGETS = $(patsubst $(SRC_DOC_DIR)/%.md,$(DEST_TXT_DIR)/%.txt,$(DOC_SOURCES))
+
+#
+# RULES
 
 .PHONY : doc clean
 
 all: doc
 
-doc: $(man_pages)
+doc: $(MAN_TARGETS) $(TXT_TARGETS)
 
 clean:
-	rm -rf $(man_pages)
+	rm -rf $(DEST_DIR)
 
 # Generic recipe to generate man pages from Markdown:
-%.1 : %.md
-	$(pandoc) -s -t man -V header="$(basename $(notdir $<))" -V section=1 "$<" -o "$@"
+$(DEST_MAN_DIR)/%.1 : $(SRC_DOC_DIR)/%.md $(DEST_MAN_DIR)/
+	$(PANDOC_EXE) -s -t man -V header="$(basename $(notdir $<))" -V section=1 "$<" -o "$@"
+
+# Generic recipe to generate doc in plain-text format from Markdown:
+$(DEST_TXT_DIR)/%.txt : $(SRC_DOC_DIR)/%.txt $(DEST_TXT_DIR)/
+	$(PANDOC_EXE) -s -t plain "$<" -o "$@"
+
+# Rule for creating output directories:
+%/ :
+	mkdir -p $@
 
