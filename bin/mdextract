@@ -7,7 +7,8 @@ shopt -s extglob
 
 # Globals:
 debug=0
-
+out_dir=.
+input_files=()
 
 # Echoes usage string to stdout
 #
@@ -15,12 +16,13 @@ function usage {
   local name="$(basename "$0")"
   cat <<EOF
 USAGE
-
-    $name
+    $name [-o {out_dir}] {input_file}...
 
 DESCRIPTION
-
-    Extracts code blocks from a Markdown (*.md) docuent passed in stdin.
+    Extracts code blocks from the Markdown (*.md) documents passed as arguments
+    {input_file}. Each code block is written as a separate file in directory {out_dir}
+    (default: '.'). If no {input_file} is given, or if '-' is passed as an input file,
+    the program reads from standard input.
 EOF
 }
 
@@ -29,16 +31,31 @@ EOF
 #
 function main {
   parse_cmdline "$@"
-  process
+
+  local in_file
+  for in_file in "${input_files}"; do
+    if [ "$in_file" == '-' ]; then
+      # A file named `-` means stdin
+      process_stdin
+    else
+      process_stdin < "$in_file"
+    fi
+  done
+
+  if [ "${#input_files[@]}" == 0 ]; then
+    # No input file given; read from stdin
+    process_stdin
+  fi
+
   local rc=$?
   trap : EXIT # Clean error msg just before exiting
   return "$rc"
 }
 
 
-# Actual processing
+# Actual processing. Extracts code snippets from the document passed in stdin.
 #
-function process {
+function process_stdin {
   local backticks='```'     # Code block delimiter string
   local lang_patn='*([[:word:]])'     # Pattern for language specifications
   local indent_patn='*([[:blank:]])'  # Pattern for matching indentation
@@ -47,7 +64,8 @@ function process {
   local line_num=0          # Current line number in the input file
   local block_start=0       # Line at which the current/last code block started
   local state=out           # Whether we are inside a code block
-  local block_name=         # Output file name for the current block
+  local block_name=         # Current block name (for generating output file name)
+  local out_file=           # Path for the output file to write
   local block_num=0         # Count of code blocks found
   local line                # The current text line read from the input
 
@@ -111,12 +129,13 @@ function process {
             block_name="$(printf 'snip_%02d.txt' $block_num)"
           ;; 
         esac
-        echo "Writing snippet: '$block_name'" >&2
-        echo -n '' > "$block_name"
+        out_file="$out_dir/$block_name"
+        echo "Writing snippet: '$out_file'" >&2
+        echo -n '' > "$out_file"
       fi
 
       # Append lines to the output file. NOTE: Better to open the file once.
-      printf '%s\n' "$line" >> "$block_name"
+      printf '%s\n' "$line" >> "$out_file"
     fi
   done
 }
@@ -125,10 +144,41 @@ function process {
 # Parses and validates command line, setting globals accordingly.
 #
 function parse_cmdline {
-  if [ $# -lt 0 -o $# -gt 0 ]; then                                                       
-    usage >&2                                                                             
-    exit 1                                                                                
+  local expect_arg=
+  local stop_opts=
+  local arg
+
+  for arg in "$@"
+  do
+    if [ "$stop_opts" == 1 ]; then
+      input_files+=( "$arg" )
+      continue
+    elif [ -n "$expect_arg" ]; then
+      declare -g "$expect_arg"="$arg"
+      expect_arg=
+      continue
+    fi
+
+    case "$arg" in
+      --)  stop_opts=1 ;;
+      -o)  expect_arg='out_dir' ;;
+      -?*) abort "Invalid option: '$arg'." ;;
+      *)   input_files+=( "$arg" ) ;;
+    esac
+  done
+
+  # Check the last option was not waiting for an argument:
+  if [ -n "$expect_arg" ]; then
+    abort "Expected argument for '$arg' option."
   fi
+
+  # Validate input files:
+  local in_file
+  for in_file in "${input_files[@]}"; do
+    [ "$in_file" == '-' ] && continue
+    [ -f "$in_file" ] || abort "Input file not found: '$in_file'."
+    [ -r "$in_file" ] || abort "Input file not readable: '$in_file'."
+  done
 }
 
 
