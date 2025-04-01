@@ -179,27 +179,6 @@ function sort_dict_keys_by_val {
 }
 
 
-# Function: get_matching_functions {fname_pattern} {dict_name}
-#
-#   Add, as keys in the dictionary named `{dict_name}`, the names of the functions
-#   existing in the environment whose name matches the pattern `{fname_pattern}`.
-#
-#   Values for the added keys are set to 1.
-#
-function _old_get_matching_functions {
-  local pattern="$1"
-  local -n dict="$2"
-
-  local -a func_entry
-  while read -r -a func_entry; do
-    local func_name="${func_entry[2]:-}"
-    case "$func_name" in $pattern)
-      dict[$func_name]=1
-    esac
-  done < <(declare -F)
-}
-
-
 # Parses the command line, setting globals.
 #
 function parse_cmdline {
