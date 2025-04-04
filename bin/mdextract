@@ -33,7 +33,7 @@ function main {
   parse_cmdline "$@"
 
   local in_file
-  for in_file in "${input_files}"; do
+  for in_file in "${input_files[@]}"; do
     if [ "$in_file" == '-' ]; then
       # A file named `-` means stdin
       process_stdin

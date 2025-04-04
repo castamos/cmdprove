@@ -20,6 +20,7 @@ MDEXTRACT_EXE = bin/mdextract
 # Source directories and file lists
 SRC_DOC_DIR = doc#
 DOC_SOURCES = $(wildcard $(SRC_DOC_DIR)/*.md)#
+README = README.md
 
 # Output directories:
 DEST_DIR = build#
@@ -48,10 +49,10 @@ clean:
 
 # Target: test_examples
 #
-# 	Extracts all test examples from Markdown docs in $(SRC_DOC_DIR) and runs them
-# 	through `cmdprove`.
+# 	Extracts all test examples from Markdown docs in $(SRC_DOC_DIR) as well as from the
+# 	$(README) file, and runs them through `cmdprove`.
 #
-test_examples : $(DOC_SOURCES) | $(DEST_DOC_EXAMPLES_DIR)/
+test_examples : $(README) $(DOC_SOURCES) | $(DEST_DOC_EXAMPLES_DIR)/
 	$(MDEXTRACT_EXE) -o $(DEST_DOC_EXAMPLES_DIR) $^
 	$(CMDPROVE_EXE) $(DEST_DOC_EXAMPLES_DIR)/sample-test*.sh
 

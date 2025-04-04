@@ -1,4 +1,3 @@
-
 # NAME
 
 `cmdprove` - A test framework for command-line programs and shell scripts.
@@ -61,8 +60,7 @@ into test functions. All functions whose name begins with `test_` are executed a
 
   ```bash
   # filename: sample-test-02.sh
-    assert 'Single substitution' -o 'subs-TI-tution' \
-      -- bash -c 'word=substitution; echo -n "${word/ti/-TI-}"'
+
   # Tests arithmetic operations in Bash.
   function test_arith {
     local x=4

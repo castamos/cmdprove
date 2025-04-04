@@ -9,7 +9,6 @@ set -Eeu
 set -o pipefail
 trap 'echo "ERROR: An unrecoverable error occurred. Aborted." >&2; exit 3' EXIT
 shopt -s extglob
-#set -x
 
 # Function: usage
 #
@@ -21,25 +20,22 @@ cat <<EOF
 EOF
 }
 
-# Config
-set -u
 
 #
-# Globals
+# GLOBALS
 
-# The list of test files to execute:
-test_file_list=()
-
-# The list of existing functions in the environment whose name matches the pattern for a
-# test function (used to exclude these from the test execution):
-declare -A existing_func_named_test
-
-# Set defaults for external variables not given:
+# External variables (set defaults if not given):
 #
 : "${TEST_DEBUG:=}"
 : "${TEST_OUT_DIR:=}"
 # Functions whose name matches this pattern are considered tests:
 : "${TEST_FUNC_PATTERN:=test_*}"
+
+# The list of test files to execute:
+test_file_list=()
+# Commands to execute in the environment of each test script, before sourcing
+# the actual script:
+pretest_commands=( "set -u" )
 
 
 # Executes each test passed as argument in the command line
@@ -152,6 +148,19 @@ function get_matching_functions {
 }
 
 
+# Function: array_pop {array} {target_var}
+#
+#   Writes the value of the last element in the array named `{array}`
+#   to the variable named {target_var}, and removes it from the array.
+#
+function array_pop {
+  local -n the_array="$1"
+  local -n target_var="$2"
+  target_var="${the_array[-1]}"
+  unset the_array[-1]
+}
+
+
 # Function: sort_dict_keys_by_val {dict} {sorted_keys}
 #
 #   Sorts, in ascending order, the keys of dictionary named `{dict}` by their
@@ -191,6 +200,18 @@ function parse_cmdline {
       --debug)
         TEST_DEBUG=1
       ;;
+      --trace-driver)
+        enable_tracing
+      ;;
+      --step-driver)
+        enable_tracing -s
+      ;;
+      --trace-test)
+        pretest_commands+=( "enable_tracing" )
+      ;;
+      --step-driver)
+        pretest_commands+=( "enable_tracing -s" )
+      ;;
       -*)
         abort "Unknown option: '$arg'"
       ;;
@@ -219,7 +240,15 @@ function run_test {
 
   # On a separate shell process, source the test script and then execute
   # our custom entry point:
-  "$SHELL" -c "_before_test_script; source '$script'; _after_test_script '$script'"
+
+  local pre_cmds="$(IFS=';' ; echo "${pretest_commands[*]}")"
+
+  "$SHELL" -c "
+    $pre_cmds
+    _before_test_script
+    source '$script'
+    _after_test_script '$script'
+  "
   local rc=$?
 
   # Check exit status
@@ -233,9 +262,11 @@ function run_test {
   return "$rc"
 }
 
+
 function _before_test_script {
-  set -u
+  :
 }
+
 
 function _after_test_script {
   local script_path="$1"
@@ -286,6 +317,67 @@ function prefix_lines {
 }
 
 
+# Function: read_file {file_path} {target_var}
+#
+#   Reads the entire contents of the file at {file_path} into the variable
+#   named {target_var}.
+#
+read_file() {
+  local file="$1"
+  local -n content_ref="$2"
+
+  # Read entire file plus a trailing marker character,
+  # to avoid chomping trailing newlines:
+  content_ref="$(cat "$file"; echo 'x')"
+
+  # Then remove the marker
+  content_ref="${content_ref%x}"
+}
+
+
+# Copies `stdin` to `stdout` but omits a trailing new-line character
+# (if exists) from the last line.
+#
+chomp() {
+	local last_content=""
+	local empty_line_count=0
+	local line
+	local have_content=false
+	
+	# Process input line by line
+	while IFS= read -r line || [ -n "$line" ]
+  do
+		if [ -z "$line" ]; then
+			# Empty line - increment counter
+			empty_line_count=$((empty_line_count + 1))
+	    continue
+    fi
+
+    # Otherwise, we found a non-empty line
+    # If we have previous content, print it with necessary newlines
+    if $have_content; then
+      printf "%s" "$last_content"
+              
+      # Print accumulated empty lines
+      for ((i=0; i<empty_line_count; i++)); do
+        printf "\n"
+      done
+    fi
+          
+    # Store this line as the last content line
+    last_content="$line"
+    empty_line_count=0
+    have_content=true
+  done
+  
+  # At the end, print the last content line if we have one
+  # (without trailing newlines)
+  if $have_content; then
+    printf "%s" "$last_content"
+  fi
+}
+
+
 # Writes a message if in debug mode
 function debug {
   [ -n "$TEST_DEBUG" ] || return 0
@@ -305,6 +397,14 @@ function abort() {
 }
 
 
+function enable_tracing {
+  set -x
+  if [ "${1:-}" == '-s' ]; then
+    set -o functrace
+    trap 'read -p ...' DEBUG
+  fi
+}
+
 # Function: assert (API)
 #
 #   Performs a basic assertion by comparing a command's output against expected values.
@@ -312,7 +412,7 @@ function abort() {
 #   be specified independently for each of them. A zero return code is also expected by
 #   default, but a different value can be specified.
 #
-# Synopsys:
+# Synopsis:
 #
 #   assert [-d] <description> [Options] -- <command>...
 #
@@ -327,12 +427,18 @@ function abort() {
 #     Since the description is mandatory, specifying `-d` before it is optional.
 #     If `-d` is not given, then <description> must be the first argument.
 #
-#   (-o | -O) <expected_output>
-#     Compare the <command>'s stdout against <expected_output>, which will be
-#     interpreted as a literal string (-o) or as a file path to read (-O).
+#   -p
+#     Preserve trailing newlines. By default, trailing newlines both in command outputs
+#     and in expected values/patterns are discarded when comparing/matching. This flag
+#     reverts that behavior.
 #
-#   (-e | -E) <expected_error>
-#     Like (-o, -O) but compare <command>'s stderr.
+#   (-o | -op | -O ) <expected_output>
+#     Compare the <command>'s stdout against <expected_output>, which will be
+#     interpreted as a literal string (-o), as an "extglob" shell pattern (-op),
+#     or as a file path to read (-O).
+#
+#   (-e | -ep | -E) <expected_error>
+#     Like (-o, -op, -O) but compare <command>'s stderr.
 #     If not given, stderr will be expected to be the empty string ('').
 #
 #   (-r | -R) <expected_retcode>
@@ -369,6 +475,7 @@ function assert {
   declare -A expected_passed
   declare -A expected_arg_type
 
+  shopt -s extglob
   expected_arg=(
     [out]=
     [err]=
@@ -407,7 +514,8 @@ function assert {
 
   local opt_key=''
   local arg_count=0
-  local value_needed=0
+  local value_needed=false
+  local preserve_trailing_newlines=false
 
   for arg in "$@"; do
 
@@ -430,7 +538,7 @@ function assert {
     local exp_cmp=
     local key_expect=
 
-    if [ "$value_needed" = 0 ]; then
+    if ! $value_needed; then
 
       case "$arg" in
         --)
@@ -439,9 +547,13 @@ function assert {
           test_command=( "$@" )
           break
           ;;
+        -p )  # Flag
+          preserve_trailing_newlines=true
+          ;;
         -*)
+          # The rest of the options require a value
           opt_key="$arg"
-          value_needed=1  # All options require a value.
+          value_needed=true
           ;;
         *)
           test_error \
@@ -453,7 +565,7 @@ function assert {
       esac
 
     else
-      value_needed=0
+      value_needed=false
 
       case "$opt_key" in
         -d ) description="$arg" ;;
@@ -488,7 +600,7 @@ function assert {
   
   # Argument validation:
 
-  if [ "$value_needed" = 1 ]; then
+  if $value_needed; then
     test_error "Missing value for option: '$opt_key'"
     return
   fi
@@ -517,7 +629,16 @@ function assert {
         expected_value[$key_expect]="$exp_arg"
         ;;
       file)
-        expected_value[$key_expect]="`cat "$exp_arg"`"
+        if $preserve_trailing_newlines; then
+          # Read entire file:
+          local exp_content
+          read_file "$exp_arg" 'exp_content'
+          expected_value[$key_expect]="$exp_content"
+        else
+          # Command-substitution chomps the value:
+          expected_value[$key_expect]="$(cat "$exp_arg")"
+        fi
+
         if [ $? != 0 ]; then
           test_error "Failed to read master file (type $key_expect) '$exp_arg': $!"
           return
@@ -556,7 +677,18 @@ function assert {
   # TODO: include timeout
   # TODO: verify if speciall characters in $command do not cause problems
   debug "Running test command ..."
-  ( "${test_command[@]}" > "${outfile[out]}" 2>"${outfile[err]}" )
+
+  if $preserve_trailing_newlines; then
+    ( "${test_command[@]}" \
+      1> "${outfile[out]}" \
+      2> "${outfile[err]}" \
+    )
+  else
+    ( "${test_command[@]}" \
+      1> >( chomp > "${outfile[out]}" ) \
+      2> >( chomp > "${outfile[err]}" ) \
+    )
+  fi
 
   # Save exit code
   local ret_code="$?"
@@ -569,9 +701,19 @@ function assert {
     note "Got return code '$ret_code', expected '${expected_value[ret]}'."
   fi
 
-  for check in out err; do
-    local exp_str=${expected_value[$check]}
-    local dif=$(_compare_files "${expected_cmp[$check]}"  <(echo -n "$exp_str") "${outfile[$check]}")
+  for check in out err
+  do
+    local check_type="${expected_cmp[$check]}"
+
+  	if $preserve_trailing_newlines; then
+      # Direct assignment to keep trailing newlines:
+    	local exp_str="${expected_value[$check]}"
+    else
+      # The variable assignment chomps the assigned value:
+    	local exp_str="$(echo -n "${expected_value[$check]}")"
+    fi
+		
+    local dif=$(_compare_files "$check_type" <(echo -n "$exp_str") "${outfile[$check]}")
 
     if [ -z "$dif" ]; then
       _test_control set_pass "std$check"
@@ -597,45 +739,61 @@ function _test_control {
   : ${_fail_count:=0}
   : ${_test_idx:=0}
   : ${_test_level:=0}
-  declare -g -a _nested_test_counts
+  declare -g -a _nested_test_count
   declare -g -a _nested_test_names
+  declare -g -a _nested_pass
+  declare -g -a _nested_fail
 
   local command="${1:-}"; shift
   local desc="${1:-}"
 
   case "$command" in
     begin_subtest)
-      # Print subtest banner
-      desc_label="${desc:+": $desc"}"
-      note "Subtest${desc_label}"
+      local desc_label="${desc:+ - $desc}"
 
-      # Push current count
-      _nested_test_counts+=( "$_test_idx" )
+      # Push current counts
       _nested_test_names+=( "$desc" )
+      _nested_test_count+=( "$_test_idx" )
+      _nested_pass+=( "$_pass_count" )
+      _nested_fail+=( "$_fail_count" )
+
+      # Print subtest banner
+      note "Subtest $((_test_idx+1))${desc_label}"
+
       _test_level=$((_test_level + 1))
-      # Restart count
+
+      # Restart counts
       _test_idx=0
+      _pass_count=0
+      _fail_count=0
     ;;
     end_subtest)
       if [ "$_test_level" == 0 ]; then
         test_error "Subtest stack underflow"
       fi
-      # Pop the last count
-      _test_idx="${_nested_test_counts[-1]}"
-      local _subtest_name="${_nested_test_names[-1]}"
-      unset _nested_test_counts[-1]
-      unset _nested_test_names[-1]
-      _test_level=$((_test_level - 1))
+      # Report results for the subtest
+      note "$_pass_count PASSED, $_fail_count FAILED"
 
-      local rc=0
-      if [ "$_fail_count" -gt 0 ]; then
+      local has_failures=0
+      [ "$_fail_count" -gt 0 ] && has_failures=1
+
+      # Now go back to the previous nesting level
+      _test_level=$((_test_level - 1))
+      local _subtest_name
+      array_pop '_nested_test_names' '_subtest_name'
+      array_pop '_nested_test_count' '_test_idx'
+      array_pop '_nested_pass'       '_pass_count'
+      array_pop '_nested_fail'       '_fail_count'
+
+      # Set the current subtest to passed/failed 
+      if [ "$has_failures" == 1 ]; then
         _test_control set_fail "$_subtest_name"
-        rc=1
       else
         _test_control set_pass "$_subtest_name"
       fi
       _test_control print_indent ""
-      return $rc
+
+      return $has_failures
     ;;
     set_pass)
       local desc_label="${desc:+ - $desc}"
@@ -668,7 +826,7 @@ function _test_control {
 #
 function note {
 	local indent_level=0
-  if [ $# > 1 ] && [ "$1" == '-l' ]; then
+  if [ $# -gt 1 ] && [ "$1" == '-l' ]; then
     indent_level="$2"; shift 2
   fi
   local prefix="# $(repeat_string '  ' $indent_level)"
@@ -693,11 +851,12 @@ function _compare_files {
       diff "$exp" "$out" 2>&1
     ;;
     pattern)
+      # Note that trailing newlines are removed when assigning to variables.
       local patn="$(cat "$exp")"
       local outs="$(cat "$out")"
 
       case "$outs" in
-        *${patn}*)
+        ${patn})
           return 0
         ;;
         *)
@@ -773,7 +932,9 @@ function terminate {
 }
 
 
-# Export all the variables and functions we want test files to have available.
+# Export, recursively, all the variables and functions we want test script to have
+# available.
+#
 export TEST_DEBUG
 export TEST_OUT_DIR
 export TEST_FUNC_PATTERN
@@ -783,10 +944,13 @@ export -f assert
 export -f note
 export -f debug
 export -f test_error
+export -f enable_tracing
 #
+export -f chomp
 export -f prefix_lines
 export -f repeat_string
 export -f sort_dict_keys_by_val
+export -f array_pop
 export -f get_unique_file
 export -f get_matching_functions
 #
