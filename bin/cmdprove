@@ -209,7 +209,7 @@ function parse_cmdline {
       --trace-test)
         pretest_commands+=( "enable_tracing" )
       ;;
-      --step-driver)
+      --step-test)
         pretest_commands+=( "enable_tracing -s" )
       ;;
       -*)
@@ -419,7 +419,7 @@ function enable_tracing {
 # Params:
 #
 #   <description> - A message to describe the assertion being tested (mandatory).
-#   <command>...  - Command line to test (command and arguments). Must be preceeded by --.
+#   <command>...  - Command line to test (command and arguments). Must be preceded by --.
 #
 # Options:
 #
@@ -640,7 +640,7 @@ function assert {
         fi
 
         if [ $? != 0 ]; then
-          test_error "Failed to read master file (type $key_expect) '$exp_arg': $!"
+          test_error "Failed to read masterfile (type $key_expect) '$exp_arg': $!"
           return
         fi
         ;;
@@ -671,11 +671,11 @@ function assert {
   debug "STDERR will be saved to: '${outfile[err]}'."
   debug "RETCODE will be saved to: '${outfile[ret]}'."
 
-  # Execute the command to test in a subshell to avoid interferring with the
+  # Execute the command to test in a subshell to avoid interfering with the
   # testing framework. If stdin is provided to the invocation of this `assert`
   # function, it can be consumed by $command, automatically.
   # TODO: include timeout
-  # TODO: verify if speciall characters in $command do not cause problems
+  # TODO: verify if special characters in $command do not cause problems
   debug "Running test command ..."
 
   if $preserve_trailing_newlines; then

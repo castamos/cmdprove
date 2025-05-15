@@ -1,13 +1,11 @@
 {
-   "name": "",
-   "type": "",
-   "description": "",
-   "tags": [],
-   "completion": "0.000",
-   "technologies": [],
-   "dependencies": {
-      "standard": {},
-      "local" : []
-   }
+   "name": "cmdprove",
+   "type": "tool",
+   "description": "A test framework for command-line programs and shell scripts.",
+   "tags": ["testing", "bash", "cli" ],
+   "version": "0.8",
+   "technologies": ["bash", "markdown"],
+   "dependencies": ["diff"],
+   "dev-dependencies": ["make", "pandoc", "codespell"],
 }
 
