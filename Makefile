@@ -1,15 +1,17 @@
 # Usage:
 #
-# 	make doc 	 # To generate man pages and doc in other formats.
-# 	make test  # To run tests for the `cmdprove` tool, including running the doc examples.
-# 	make all   # To do it all.
-# 	make clean # To delete everything generated.
+#   make doc          # Generates man pages and docs in other formats.
+#   make test         # Runs tests tool, including running the doc examples.
+#   make check-spell  # Checks spelling
+#   make test-all     # make test + make check-spell
+#   make all          # Builds/tests everything.
+#   make clean        # Deletes everything generated.
 #
-#	Output:
-# 	Everything this Makefile generates ends up inside $(DEST_DIR) (i.e. `build/`).
+#  Output:
+#   Everything this Makefile generates ends up inside $(DEST_DIR) (i.e. `build/`).
 #
 # External Dependencies:
-# 	`pandoc` is used to format the documentation.
+#   `pandoc` is used to format the documentation.
 #
 
 # External utilities needed by this Makefile:
@@ -43,7 +45,7 @@ CHECK_SPELL_CMD = $(CODESPELL_EXE) --check-filenames --builtin clear,rare,usage
 # `--ignore-regex-file`, and that doesn't exist.
 #
 #CHECK_SPELL_CMD = $(CODESPELL_EXE) --check-filenames --builtin clear,rare,usage \
-#	-r '[a-zA-Z]+' --ignore-regex '(?i)\b()subs-ti-tution\b'	
+#  -r '[a-zA-Z]+' --ignore-regex '(?i)\b()subs-ti-tution\b'  
 
 
 #
@@ -53,7 +55,9 @@ CHECK_SPELL_CMD = $(CODESPELL_EXE) --check-filenames --builtin clear,rare,usage
 
 all: doc test
 
-test: test-examples run-tests check-spell
+test: test-examples run-tests
+
+test-all: test check-spell
 
 doc: $(MAN_TARGETS) $(TXT_TARGETS)
 
@@ -63,8 +67,8 @@ clean:
 
 # Target: test-examples
 #
-# 	Extracts all test examples from Markdown docs in $(SRC_DOC_DIR) as well as from the
-# 	$(README) file, and runs them through `cmdprove`.
+#   Extracts all test examples from Markdown docs in $(SRC_DOC_DIR) as well as from the
+#   $(README) file, and runs them through `cmdprove`.
 #
 test-examples : $(README) $(DOC_SOURCES) | $(DEST_DOC_EXAMPLES_DIR)/
 	$(MDEXTRACT_EXE) -o $(DEST_DOC_EXAMPLES_DIR) $^
@@ -73,7 +77,7 @@ test-examples : $(README) $(DOC_SOURCES) | $(DEST_DOC_EXAMPLES_DIR)/
 
 # Target: run-tests
 #
-#		Run the project's tests
+#    Run the project's tests
 #
 run-tests :
 	$(CMDPROVE_EXE) $(SRC_TEST_DIR)/test_*.sh
@@ -81,8 +85,8 @@ run-tests :
 
 # Target: check-spell
 #
-# 	Check spelling for all the files in the project (using misspelling patterns).
-# 	This is non-interactive, just provides a report.
+#   Check spelling for all the files in the project (using misspelling patterns).
+#   This is non-interactive, just provides a report.
 #
 check-spell:
 	$(CHECK_SPELL_CMD)
@@ -90,7 +94,7 @@ check-spell:
 
 # Target: fix-spell
 #
-# 	Run the spell checker in interactive mode to help fixing spelling.
+#   Run the spell checker in interactive mode to help fixing spelling.
 #
 fix-spell:
 	$(FIX_SPELL_CMD)
@@ -98,7 +102,7 @@ fix-spell:
 
 # Implicit rule: %.md => %.1
 #
-# 	Generates a Man Page in $(DEST_MAN_DIR) from each Markdown file in $(SRC_DOC_DIR).
+#   Generates a Man Page in $(DEST_MAN_DIR) from each Markdown file in $(SRC_DOC_DIR).
 #
 .SECONDARY : $(DEST_MAN_DIR)/ # (Prevent deletion: prerequisite created from implicit rule.)
 $(DEST_MAN_DIR)/%.1 : $(SRC_DOC_DIR)/%.md | $(DEST_MAN_DIR)/
@@ -107,8 +111,8 @@ $(DEST_MAN_DIR)/%.1 : $(SRC_DOC_DIR)/%.md | $(DEST_MAN_DIR)/
 
 # Implicit rule: %.md => %.1
 #
-# 	Generates a plain text file in $(DEST_TXT_DIR) from each Markdown file in
-# 	$(SRC_DOC_DIR).
+#   Generates a plain text file in $(DEST_TXT_DIR) from each Markdown file in
+#   $(SRC_DOC_DIR).
 #
 .SECONDARY : $(DEST_TXT_DIR)/
 $(DEST_TXT_DIR)/%.txt : $(SRC_DOC_DIR)/%.md | $(DEST_TXT_DIR)/
@@ -117,7 +121,7 @@ $(DEST_TXT_DIR)/%.txt : $(SRC_DOC_DIR)/%.md | $(DEST_TXT_DIR)/
 
 # Implicit rule: %/ => {dir}
 #
-# 	Creates directories corresponding to prerequisite whose names end in '/'.
+#   Creates directories corresponding to prerequisite whose names end in '/'.
 #
 %/ :
 	mkdir -p $@
