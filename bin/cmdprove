@@ -20,17 +20,18 @@ fi
 # Define search paths:
 bindir="$( cd "$( dirname "$0" )" >/dev/null 2>&1 && pwd )"
 doc_path="$bindir/../build/doc/txt"
-lib="$bindir"
+lib="$bindir/../lib"
 
 # Load all the libraries:
+source "$lib/util/data_manip.sh"
+source "$lib/util/string.sh"
+source "$lib/util/shell_env.sh"
+source "$lib/util/filesys.sh"
 source "$lib/process.sh"
-source "$lib/data_manip.sh"
-source "$lib/string.sh"
-source "$lib/help.sh"
-source "$lib/shell_env.sh"
-source "$lib/filesys.sh"
 source "$lib/test_driver.sh"
 source "$lib/test_api.sh"
+source "$lib/help_driver.sh"
+source "$lib/help_content.sh"   # Help content must be the last import
 unset lib
 
 
@@ -115,10 +116,12 @@ export -f note
 export -f debug
 export -f test_error
 export -f enable_tracing
+export -f abort
 #
 export -f chomp
 export -f prefix_lines
 export -f repeat_string
+export -f is_sort_op
 export -f dict_sort_keys_by_val
 export -f array_pop
 export -f get_unique_file

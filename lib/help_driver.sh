@@ -1,10 +1,12 @@
 #!/bin/bash
 #
-#   Module: help
+#   Module: help_driver.sh
 #
 #   Provides an interface for showing help about provided commands and the test API.
+#   The actual help contents is in module `help_content.sh`.
 #
 
+# These dicts will contain the help contents, filled in by `help_content.sh`
 declare -A _api_help_content
 declare -A _api_help_summary
 
@@ -24,11 +26,12 @@ function usage {
 
 # Function: help_api {topic}
 #
-#   Echoes, to stdout, the help corresponding to {topic}, where {topic} is an API
+#   Echoes, to stdout, the help corresponding to {topic}, where {topic} is an API 
 #   function name or a help concept.
 #
 function help_api {
-	local topic="$1"
+
+  local topic="$1"
 
   if [[ "$topic" == 'summary' ]]
   then
@@ -57,29 +60,4 @@ function _help_api_summary {
   done
 }
 
-
-# Since the documentation for this function is quite large, it is provided as a man page,
-# here we just copy the plain text version of that man page.
-_api_help_content[assert]="$(usage 'cmdprove-assert')"
-_api_help_summary[assert]="Checks a command's output against expected values"
-
-
-_api_help_summary[describe]="Provides a description for the test"
-_api_help_content[describe]="$(cat << 'EOF'
-describe {desc}
-
-Uses {desc} as a description for the current test.
-The given value is used to format the test output.
-EOF
-)"
-
-
-_api_help_summary[note]="Writes a comment in the test output"
-_api_help_content[note]="$(cat << 'EOF'
-note {message}
-
-Writes {message} as a comment in the test output.
-Use this function instead of a plain `echo`, so that the output is correctly formatted.
-EOF
-)"
 
