@@ -12,10 +12,10 @@ accepted.
 ## Philosophy
 
 As stated in the [Scope section of the README](README.md#scope), this test framework is
-intended to be simple and easy to use, for adding output checks for command-line projects
-and Bash functions.  We also want the framework to be as portable as possible.  As such,
-we will be careful when adding new functionality, especially for functionality not
-recorded in the [ROADMAP](ROADMAP.md).
+intended to be simple and easy to use, targeted to adding checks for the output of
+command-line programs and Bash functions.  We also want the framework to be as portable
+as possible.  As such, we will be careful when adding new functionality, especially for
+functionality not recorded in the [ROADMAP](ROADMAP.md).
 
 
 ## Quality Assurance
@@ -32,7 +32,7 @@ chances of PRs being accepted.
 
 ### Avoid using external tools as much as possible
 
-Instead of using tools such as `sed`, `grep`, `awk` or even `perl`;
+Instead of using tools such as `sed`, `grep`, `awk` or even `perl` or `python`;
 implement functions in pure Bash using constructs/builtins such as `case`,
 `read`, `[[ ... ]]`, etc.
 
@@ -43,11 +43,11 @@ this test framework less reliable.
 
 There could be legitimate and exceptional cases, however, in which an external tool is
 really needed (e.g. it would be overly complicated to implement important functionality
-in Bash). In such cases, only POSIX-compliant tools and options should be used, and the
-tools *must* be listed under _EXTERNAL DEPENDENCIES_ in the [](README.md) file.
+in Bash).  In such cases, only POSIX-compliant tools and tool features should be used,
+and the tools *must* be listed under _EXTERNAL DEPENDENCIES_ in the [](README.md) file.
 
 
-### Do not use undefined variables or provide defaults
+### Do not use undefined variables without providing defaults explicitly
 
 Actually you can't use undefined variables even if you wanted because the framework runs
 with `set -u` enabled (for details run `help set` in Bash).  When there is a possibility
@@ -57,9 +57,9 @@ default may be the empty string: `${variable:-}`.
 
 ### Make sure functions return zero on success and non-zero on failure
 
-The framework runs with `set -eE` enabled (see `help set`); therefore, any command
-(including function calls) returning a non-zero code and executed outside
-condition-checking statements will result in immediate abort of the whole framework.
+The framework runs with `set -eE` enabled (see `help set`); therefore, any failing
+command (i.e. returning non-zero) executed outside condition-checking statements will
+result in immediate abort of the whole framework.  This applies also to function calls.
 
 
 ### Use `$(command args)` instead of backticks ``command args``
@@ -81,10 +81,10 @@ _Command Substitutions_ (i.e. when using the output of a command). For example:
   nested_output="$(outer_command "$arg_a1" "$(inner_command "$arg_b1" "$arg_b2")")"
   ```
 
-(Actually, in the previous example the outer quotes--and only those, could be omitted, 
-but better to keep them for consistency.)
+(In the previous example the outer quotes--and only those, could be omitted, but it is
+better to keep them for consistency.)
 
-There are legitimate cases, however, in which non-quoting is necessary and/or useful, but
+There are legitimate cases, however, in which non-quoting is necessary or useful, but
 this should be used wisely. For example:
 
   ```bash
@@ -99,5 +99,4 @@ In general, remember that despite providing high-level control flow constructs a
 operators, *Shell Scripting is in the first place a text-based macro expansion language*
 (run this to convince yourself: `man bash | grep -i expansion`).  This could be a feature
 one can take advantage of, if quoting wisely; or a bug otherwise.
-
 

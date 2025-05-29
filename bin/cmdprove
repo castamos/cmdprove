@@ -19,8 +19,10 @@ fi
 
 # Define search paths:
 bindir="$( cd "$( dirname "$0" )" >/dev/null 2>&1 && pwd )"
-doc_path="$bindir/../build/doc/txt"
-lib="$bindir/../lib"
+
+# Installed or built docs
+doc_path="$bindir/../share/doc/cmdprove/txt"
+lib="$bindir/../lib/cmdprove"
 
 # Load all the libraries:
 source "$lib/util/data_manip.sh"

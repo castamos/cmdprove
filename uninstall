@@ -1,0 +1,372 @@
+#!/bin/bash
+#
+#   Uninstalls the package containing itself.
+#   For details, see the usage() function or run with --help.
+#
+set -Eeu
+#set -x
+
+script_name="$(basename "$0")"
+
+usage() {
+  cat <<EOF
+
+NAME
+
+  $script_name - Uninstalls the package that contains itself.
+
+SYNOPSIS
+
+    $script_name [ --strict ] [ --safe | --delete-user-files | --keep-user-files ]
+
+DESCRIPTION
+
+  The absolute path of this script is interpreted as:
+
+    {PREFIX}/share/{PROJ_NAME}/uninstall
+
+  Where {PREFIX} and {PROJ_NAME} should be non-empty. Fails if the script path does not
+  match such pattern.
+
+  A file 'install.manifest' is expected in the same directory of this script.  On each
+  line, it should contain a path, relative to {PREFIX}, for each file and directory that
+  should be removed. Entries should be given in depth-first order.
+
+  The following is checked before attempting to delete anything:
+
+    1. Permissions are sufficient for deleting each file/dir in the manifest
+    2. Presence of unmanifested files/sub dirs:
+       - Files/dirs not listed in the manifest but existing in a directory to be
+         deleted.
+
+  The behavior of the script when unmanifested files are encountered, depends on the
+  given options, if any (see below).
+
+OPTIONS
+
+  General options:
+
+    --dry
+    : Dry run. Do not attempt to delete anything, just perform checks.
+
+    --strict
+    : Treat warnings as errors.
+    : In particular, abort if manifested files are not present on disk.
+      (Default is to emit a warning and continue.)
+
+    --help
+    : Show this message and exit.
+
+  Controlling what to do when unmanifested files are encountered:
+
+    --safe
+    : Do not delete anything (this is the default, this flag can be ommited).
+
+    --delete-user-files
+    : Delete everything: both manifested and unmanifested files.
+
+    --keep-user-files
+    : Keep unmanifested files but delete all manifested files.
+
+EOF
+}
+
+
+#
+# Globals
+
+# Set statically
+bindir="$( cd "$( dirname "$0" )" >/dev/null 2>&1 && pwd )"
+manifest="$bindir/install.manifest"
+
+is_dry=false      # Whether we are running in dry mode and not deleting anything
+is_strict=false   # Whether we are treating warnings as errors
+is_verbose=false  # Whether to print extra messages
+unmanif=safe      # Mode for handling unmanifested files: safe, keep, delete
+
+# Set dynamically
+declare install_prefix
+declare proj_name
+
+# Program state
+has_warn=false
+has_error=false
+
+
+# Entry point
+#
+main() {
+  parse_cmdline "$@"
+  get_project_info "$bindir"
+
+  info "Validating installation manifest ..."
+  check_manifest "$manifest"
+
+  info "Validating installation ..."
+  uninstall --check < "$manifest"
+
+  if $has_warn && $is_strict || $has_error; then
+    abort "Validations failed (see above)."
+  fi
+
+  if $is_dry; then
+    echo "Dry mode, nothing was deleted. Stopping."
+    return 0
+  fi
+
+  info "Uninstalling ..."
+  uninstall --apply < "$manifest"
+}
+
+
+# Function: parse_cmdline {args}...
+#
+#   Parses the command line and sets globals appropriately.
+#
+parse_cmdline() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry               ) is_dry=true       ;;
+      --strict            ) is_strict=true    ;;
+      --safe              ) unmanif=safe      ;;
+      --keep-user-files   ) unmanif=keep      ;;
+      --delete-user-files ) unmanif=delete    ;;
+      --verbose           ) is_verbose=true   ;;
+      #
+      -h|--help)
+        usage; exit 0
+      ;;
+      *)
+        abort "Invalid argument: '$arg'. For help, run: $script_name --help"
+      ;;
+    esac
+  done
+}
+
+
+# Function: get_project_info {reference_path}
+#
+#   Based on {reference_path} (normally the dir containing this script),
+#   sets the following global vars with info for the project to uninstall:
+#   
+#     install_prefix, proj_name
+#
+#   Aborts if the project info cannot be determined.
+#
+get_project_info() {
+  local ref_path="$1"
+
+  proj_name="$(basename "$ref_path")"
+  local exp_share_path="$(dirname "$ref_path")"
+  install_prefix="$(dirname "$exp_share_path")"
+  local exp_share_dir="$(basename "$exp_share_path")"
+
+  if [[ -z "$proj_name" || -z "$install_prefix" || "$exp_share_dir" != 'share' ]]; then
+    abort "Location of uninstall script does not match expected pattern: \n" \
+      "Found: $ref_path\n" \
+      'Expected to match: $PREFIX/share/$PROJ_NAME'
+  fi
+}
+
+
+# Function: check_manifest {manifest_path}
+#
+#   Checks if the installation manifest file at {manifest_path} exists and is valid.
+#   Aborts on failure.
+#
+check_manifest() {
+  local manif_path="$1"
+  if [[ ! -f "$manif_path" ]]; then
+    abort "Installation manifest not found: '$manif_path'"
+  elif [[ ! -r "$manif_path" ]]; then
+    abort "Installation manifest not readable: '$manif_path'"
+  fi
+}
+
+
+# Function: uninstall (--check | --apply)
+#
+#   Checks the installation manifest entries given in stdin against the actual file
+#   system. If `--apply` is given, perform actual deletions, otherwise only checks.
+#
+#   - Files in manifest not present on disk -> warning
+#   - Files not in manifest present in declared dirs -> error
+#     (or warning if `unmanifest=delete`)
+#
+#   Echoes warnings/errors to stderr and sets `has_warn`/`has_error` accordingly and
+#   honoring the `unmanifest` mode.
+#
+uninstall() {
+
+  if [[ "${1:-}" == --apply ]]; then
+    # Actual delete mode
+    local apply=true
+    local delete_v='Deleting'
+    local keep_v='Keeping'
+  else
+    # Check mode
+    local apply=false
+    local delete_v='Will delete'
+    local keep_v='Will keep'
+  fi
+
+  # For keeping track of which files/dirs (-would) have been deleted so far
+  local -A delete_list=()
+
+  local rel_path
+  while IFS= read rel_path || [[ -n "$rel_path" ]]
+  do
+    local path="$install_prefix/$rel_path"
+
+    if [[ ! -e "$path" ]]; then
+      warn "Installed file does not exist, ignoring: '$path'"
+      continue
+    fi
+
+    # Check if parent dir has write permissions, thus allowing us to delete the file:
+    if [[ ! -w "$(dirname "$path")" ]]; then
+      error "Will not delete: '$path'. Could not write parent directory."
+      continue
+    fi
+
+    case "$path" in
+      */)
+        # (Because of the trailing '/', if the `-e` check passed, we know for sure this
+        # entry is a directory.)
+        
+        # Check dir contents:
+        
+        local is_empty=true
+        local child=
+
+        while IFS= read child || [[ -n "$child" ]]
+        do
+          # Discard . and ..
+          [[ "$child" == '.' || "$child" == '..' ]] && continue 
+
+          # Determine "directory-qualified" child relative path
+          local child_rel_path="$rel_path$child"
+          [[ -d "$path/$child" ]] && child_rel_path+='/'
+
+          # Check if the entry is already marked for deletion (or deleted already)
+          verbose "> Checking: '$child_rel_path'"
+          [[ -v delete_list["$child_rel_path"] ]] && continue
+
+          local msg="Directory not empty: '$path', child: '$child'"
+
+          case "$unmanif" in
+            safe)
+              error "$msg. $keep_v child."
+              is_empty=false
+            ;;
+            keep)
+              warn  "$msg. $keep_v child."
+              is_empty=false
+            ;;
+            delete)
+              info "$msg. $delete_v child."
+              if ! handle_delete "$apply" "$path/$child" "$child_rel_path"
+              then
+                is_empty=false
+              fi
+            ;;
+            *) abort "Invalid unmanif value: '$unmanif'"
+          esac
+
+        done < <(ls -a "$path")
+
+        if ! $is_empty; then
+          warn "Will not attempt to delete non-empty dir: '$path'"
+          continue
+        fi
+
+        handle_delete "$apply" "$path" "$rel_path" --dir
+      ;;
+      *)
+        if [[ -f "$path" ]]; then
+          handle_delete "$apply" "$path" "$rel_path"
+        else
+          warn "Not a regular file: '$path'"
+        fi
+      ;;
+    esac
+
+  done
+  return 0
+}
+
+
+# Function: handle_delete {apply} {actual_path} {rel_path} {rm_flags)...
+#
+#   If `{apply}==true`, attempts to delete {actual_path}, on success registers {rel_path}
+#   in the `delete_list` (inherited from caller).
+#
+#   If `{apply}==false`, just registers {rel_path} in `delete_list as if it was deleted.
+#
+#   Any {rm_flags} are passed to the `rm` command.
+#
+#   May call `error()` (thus setting `has_error`).
+#
+handle_delete() {
+  local apply="$1"
+  local full_path="$2"
+  local rel_path="$3"
+  shift 3
+  local rm_flags=( "$@" )
+
+  if ! $apply; then
+    # Just record hypothetic deletion
+    delete_list[$rel_path]="$full_path"
+    verbose "> Marked for deletion: '$rel_path'"
+    return 0
+  fi
+
+  if rm "${rm_flags[@]}" "$full_path"; then
+    info "Deleted: '$full_path'"
+    delete_list[$rel_path]="$full_path"
+    return 0
+  else
+    error "Failed to delete: '$full_path'"
+    return 1
+  fi
+}
+
+
+# Prints an info message to stderr
+info() {
+  echo -e "INFO: $*" >&2
+}
+
+
+# Prints a message if in verbose mode
+verbose() {
+  $is_verbose || return 0
+  echo -e "VERB: $*" >&2
+}
+
+
+# Prints an error message to stderr and sets the error flag.
+error() {
+  echo -e "ERROR: $*" >&2
+  has_error=true
+}
+
+
+# Prints a warning message to stderr and sets the warn flag.
+warn() {
+  echo -e "WARN: $*" >&2
+  has_warn=true
+}
+
+
+# Abort uninstallation
+abort() {
+  echo -e "ERROR: $*" >&2
+  echo "Aborting uninstall script." >&2
+  exit 1
+}
+
+
+main "$@"
+

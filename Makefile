@@ -1,36 +1,90 @@
 # Usage:
 #
-#   make doc          # Generates man pages and docs in other formats.
-#   make test         # Runs tests tool, including running the doc examples.
-#   make check-spell  # Checks spelling
-#   make test-all     # make test + make check-spell
-#   make all          # Builds/tests everything.
+#   make all          # Builds everything necessary for installation (default target).
+#   make test         # Runs all tests, including running the doc examples.
+#   make install      # Installs the program and documentation under `INSTALL_PREFIX`
 #   make clean        # Deletes everything generated.
 #
-#  Output:
-#   Everything this Makefile generates ends up inside $(DEST_DIR) (i.e. `build/`).
+#   # Fine grained targets:
+#   make exes         # Generates (copies) executables and libraries to the build dir
+#   make doc          # Generates man pages and docs in other formats.
+#   test-examples     # Runs the code in the examples
+#   run-tests         # Runs integration tests
+#   check-spell       # Checks the spelling of all source files in the project
+#
+# Output:
+#
+#   Everything this Makefile generates ends up inside `$(BUILD_DIR)` (i.e. `build/`).
 #
 # External Dependencies:
-#   `pandoc` is used to format the documentation.
+#
+#   `pandoc`    to format the documentation.
+#   `rsync`     to install all the files
+#   `codespell` to check spelling
+#
+# Variables accepted in the command line:
+#
+#   INSTALL_PREFIX  - Directory prefix for the installation
+#   PANDOC_EXE      - Path for the `pandoc` program
+#   ...             - Similarly for the other external dependencies
+#
+#   Can be set like `make {target} {var}={value}...`
+#   For example:
+#
+#     make install INSTALL_PREFIX=/opt/myprog RSYNC_EXE=/usr/remote/bin/rsync
 #
 
-# External utilities needed by this Makefile:
-PANDOC_EXE = pandoc#
-CMDPROVE_EXE = bin/cmdprove#
-MDEXTRACT_EXE = bin/mdextract#
-CODESPELL_EXE = codespell#
+ifdef MAKE_VERSION
+  $(info GNU Make version $(MAKE_VERSION))
+else
+  $(error This Makefile requires GNU Make (gmake).)
+endif
 
+# For consistency, ensure all shell commands are executed by `bash`
+SHELL := $(shell which bash)
+
+# Include project-specific configuration:
+CONFIG_FILE ?= config.mk
+include $(CONFIG_FILE)
+
+# Check required variables are set in the config file:
+ifeq ($(strip $(PROJ_NAME)),) 
+  $(error Missing variable: PROJ_NAME in '$(CONFIG_FILE)')
+endif
+
+#
+# Configurable variables (can be set in the command line)
+
+# Installation directory
+INSTALL_PREFIX ?= $(HOME)/.local
+
+# External utilities needed by this Makefile
+PANDOC_EXE    ?= pandoc#
+CODESPELL_EXE ?= codespell#
+RSYNC_EXE     ?= rsync#
+
+#
 # Source directories and file lists
+
 SRC_TEST_DIR = test#
 SRC_DOC_DIR = doc#
 DOC_SOURCES = $(wildcard $(SRC_DOC_DIR)/*.md)#
 README = README.md
 
 # Output directories:
-DEST_DIR = build#
-DEST_MAN_DIR = $(DEST_DIR)/doc/man#
-DEST_TXT_DIR = $(DEST_DIR)/doc/txt#
-DEST_DOC_EXAMPLES_DIR = $(DEST_DIR)/test/doc-examples#
+BUILD_DIR = build#
+DEST_DIR = $(BUILD_DIR)/release
+DEST_BIN = $(DEST_DIR)/bin
+DEST_LIB = $(DEST_DIR)/lib/$(PROJ_NAME)
+DEST_MAN_DIR = $(DEST_DIR)/share/man/man1#
+DEST_TXT_DIR = $(DEST_DIR)/share/doc/$(PROJ_NAME)/txt#
+DEST_DOC_EXAMPLES_DIR = $(BUILD_DIR)/doc-examples#
+DEST_UNINSTALL = $(DEST_DIR)/share/$(PROJ_NAME)
+
+# Internal utilities/executables
+CMDPROVE_EXE  = $(DEST_BIN)/$(PROJ_NAME)#
+MDEXTRACT_EXE = $(DEST_BIN)/mdextract#
+INSTALL_MANIFEST = $(DEST_UNINSTALL)/install.manifest
 
 # Generated documentation in different formats, rendered from corresponding Markdown files:
 MAN_TARGETS = $(patsubst $(SRC_DOC_DIR)/%.md,$(DEST_MAN_DIR)/%.1,$(DOC_SOURCES))#
@@ -49,20 +103,46 @@ CHECK_SPELL_CMD = $(CODESPELL_EXE) --check-filenames --builtin clear,rare,usage
 
 
 #
+# FUNCTIONS
+
+# Checks string $1 is a member of the comma-separated list in variable named $2.
+#
+check_path_in_var = \
+	echo "$${$(2)}" | tr ':' '\n' | grep -q "^$(1)$$" \
+	  || echo "WARN: Make sure $(1) is in your $(2) env var."
+
+#
 # RULES
 
-.PHONY : all clean doc test
+.PHONY : all exes doc test clean
 
-all: doc test
-
-test: test-examples run-tests
-
-test-all: test check-spell
+all: exes doc install-manifest
 
 doc: $(MAN_TARGETS) $(TXT_TARGETS)
 
+test: test-examples run-tests check-spell
+
+install: $(CMDPROVE_EXE)
+	rsync -av --no-perms --ignore-times "$(DEST_DIR)/" "$(INSTALL_PREFIX)/"
+	@$(call check_path_in_var,$(INSTALL_PREFIX)/bin,PATH)
+	@$(call check_path_in_var,$(INSTALL_PREFIX)/share/man,MANPATH)
+
+
+# Our executables are shell scripts, just copy them
+exes: | $(DEST_BIN)/ $(DEST_LIB)/ $(DEST_UNINSTALL)/
+	cp -aR bin/* "$(DEST_BIN)/"
+	cp -aR lib/* "$(DEST_LIB)/"
+	cp -a uninstall "$(DEST_UNINSTALL)"
+
 clean:
-	rm -rf $(DEST_DIR)
+	rm -rf $(BUILD_DIR)
+
+install-manifest: | $(DEST_UNINSTALL)/
+	touch $(INSTALL_MANIFEST)
+	find "$(DEST_DIR)" \
+		-type f -printf '%P\n' -o \
+		-type d \( -name "$(PROJ_NAME)" -o -path "*/$(PROJ_NAME)/*" \) -printf '%P/\n' \
+		| sort -r > "$(INSTALL_MANIFEST)"
 
 
 # Target: test-examples
