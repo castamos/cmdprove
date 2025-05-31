@@ -44,3 +44,8 @@ So that it is required for tests to indicate how many subtests are expected to r
 
 So that tests can specify for which specific version they were written.
 
+
+---
+Copyright (C) 2025 Moisés Castañeda.
+Licensed under GPL-3.0-or-later. See LICENSE file.
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->

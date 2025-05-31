@@ -1,4 +1,14 @@
-
+#!/bin/bash
+# 
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
+#
+#   Module: test_driver.sh
+#
+#   Description:
+#     Entry-point functions for the test framework.
+#
 
 # Executes each test passed as argument in the command line
 function run_all {

@@ -1,15 +1,48 @@
 #!/bin/bash
+# 
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
 #
 #   Module: test_api
 #
-#   This module contains the functions exposed to user test scripts for implementing the
-#   actual tests.
+#   Description:
 #
-#   For detailed descriptions of the API functions, see the `test_api_help.sh` module, or
-#   run `cmdprove --help {api_func_name}`.
-#   
+#     This module contains the functions exposed to user test scripts for implementing
+#     the actual tests.
+#
+#     For detailed descriptions of the API functions, see the `help_content.sh` module,
+#     or run `cmdprove --help {api_func_name}`.
+#
 
 
+# Function: note [-l {indent_level}] {comment}
+#
+#		Writes a {comment} in the test output.
+#
+function note {
+	local indent_level=0
+  if [ $# -gt 1 ] && [ "$1" == '-l' ]; then
+    indent_level="$2"; shift 2
+  fi
+  local prefix="# $(repeat_string '  ' $indent_level)"
+  local note_prefixed="$(prefix_lines "$prefix" "$*")"
+	_test_control print_indent "$note_prefixed"
+}
+
+
+# Function: describe {desc}
+#
+#   Uses {desc} as a description for the current test.
+#
+function describe {
+  note "$1"
+}
+
+
+# Runs a command and checks its outputs.
+# (See help_content.sh for the full explanation.)
+#
 function assert {
   local test_name='test'      # Set from env var TEST_NAME
   local description=
@@ -280,6 +313,11 @@ function assert {
 }
 
 
+# Private Function: _test_control {subcommand}
+#
+#  Used internally to keep track of test execution (counts for passed/failed subtests,
+#  etc).
+#
 function _test_control {
   # Define globals if not present:
   : ${_pass_count:=0}
@@ -363,31 +401,4 @@ function _test_control {
     ;;
   esac
 }
-
-
-# Function: note [-l {indent_level}] {multi_line}
-#
-#		Writes the {multi_line} string as a comment in the test output.
-#		An indentation level {indent_level} can be specified, default is 0.
-#   (This indentation is in addition to the current subtest indentation.)
-#
-function note {
-	local indent_level=0
-  if [ $# -gt 1 ] && [ "$1" == '-l' ]; then
-    indent_level="$2"; shift 2
-  fi
-  local prefix="# $(repeat_string '  ' $indent_level)"
-  local note_prefixed="$(prefix_lines "$prefix" "$*")"
-	_test_control print_indent "$note_prefixed"
-}
-
-
-# Function: describe (API)
-#
-#   Starts a test case.
-#
-function describe {
-  note "$1"
-}
-
 

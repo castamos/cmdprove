@@ -1,3 +1,15 @@
+#!/bin/bash
+# 
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
+#
+#   Module: shell_env.sh
+#
+#   Description:
+#     Generic functions for accessing the current shell environment.
+#
+
 
 # Function: get_matching_functions {source_file} {func_name_pattern} {array_name}
 #

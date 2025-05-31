@@ -1,4 +1,13 @@
 #!/bin/bash
+# 
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
+#
+#   Extracts code blocks from Markdown documents.
+#   For details, run this script passing `--help`.
+#
+# 
 set -Eeu
 set -o pipefail
 trap 'echo "ERROR: An unrecoverable error occurred. Aborted." >&2; exit 3' EXIT
@@ -160,6 +169,7 @@ function parse_cmdline {
     fi
 
     case "$arg" in
+      -h|--help) usage; exit 0 ;;
       --)  stop_opts=1 ;;
       -o)  expect_arg='out_dir' ;;
       -?*) abort "Invalid option: '$arg'." ;;

@@ -1,8 +1,13 @@
 #!/bin/bash
+# 
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
 #
-# Module: data_manip
+#   Module: data_manip
 #
-#   Generic functions for data manipulation (in arrays and dictionaries).
+#   Description:
+#     Generic functions for data manipulation (in arrays and dictionaries).
 #
 
 

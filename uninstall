@@ -1,7 +1,13 @@
 #!/bin/bash
 #
-#   Uninstalls the package containing itself.
-#   For details, see the usage() function or run with --help.
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
+#
+# DESCRIPTION
+#
+# 	Uninstalls the package containing itself.
+# 	For details, see the usage() function or run with --help.
 #
 set -Eeu
 #set -x

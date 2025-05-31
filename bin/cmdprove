@@ -1,6 +1,10 @@
 #!/bin/bash
 #
-# A test framework for Bash scripts.
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
+#
+# A test framework for command-line programs and Bash functions.
 # To see the full documentation, run this script passing the `--help` flag.
 #
 

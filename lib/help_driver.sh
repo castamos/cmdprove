@@ -1,9 +1,14 @@
 #!/bin/bash
+# 
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
 #
 #   Module: help_driver.sh
 #
-#   Provides an interface for showing help about provided commands and the test API.
-#   The actual help contents is in module `help_content.sh`.
+#   Description:
+#     Provides an interface for showing help about provided commands and the test API.
+#     The actual help contents is in module `help_content.sh`.
 #
 
 # These dicts will contain the help contents, filled in by `help_content.sh`

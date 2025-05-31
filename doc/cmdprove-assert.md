@@ -69,3 +69,8 @@ default, but a different value can be specified.
 
 A message representing the result of the test.
 
+# CMDPROVE
+
+Part of the *cmdprove*(1) suite.
+
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->

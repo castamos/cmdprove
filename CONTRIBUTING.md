@@ -100,3 +100,8 @@ operators, *Shell Scripting is in the first place a text-based macro expansion l
 (run this to convince yourself: `man bash | grep -i expansion`).  This could be a feature
 one can take advantage of, if quoting wisely; or a bug otherwise.
 
+
+---
+Copyright (C) 2025 Moisés Castañeda.
+Licensed under GPL-3.0-or-later. See LICENSE file.
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->

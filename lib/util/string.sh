@@ -1,3 +1,15 @@
+#!/bin/bash
+# 
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
+#
+#   Module: string.sh
+#
+#   Description:
+#     Generic functions for string manipulation.
+#
+
 
 function repeat_string {
   local string="$1"

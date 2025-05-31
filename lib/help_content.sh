@@ -1,8 +1,13 @@
 #!/bin/bash
 #
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
+#
 #   Module: help_content.sh
 #
-#   Actual help strings.
+#   Description:
+#     Help strings that are printed by the `--help {topic}` subcommand.
 #
 
 _api_help_summary[describe]="Provides a description for the test"
@@ -17,10 +22,12 @@ EOF
 
 _api_help_summary[note]="Writes a comment in the test output"
 _api_help_content[note]="$(cat << 'EOF'
-note {message}
+note [-l {indent_level}] {comment}
 
-Writes {message} as a comment in the test output.
-Use this function instead of a plain `echo`, so that the output is correctly formatted.
+Writes the {comment} string as a comment in the test output.
+newline characters in {comment} are handled appropriately.
+An indentation level {indent_level} can be specified, default is 0.
+(This indentation is in addition to the current subtest indentation.)
 EOF
 )"
 

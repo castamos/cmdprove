@@ -126,6 +126,24 @@ targets for spell-checking based on the
 All generated files end up inside the `build/` directory, for details see the `Makefile`.
 
 
+License
+-------
+
+cmdprove is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+cmdprove is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+cmdprove. If not, see <https://www.gnu.org/licenses/>.
+
+See top-level file: [LICENSE](LICENSE).
+
+
 Contributing
 ------------
 
@@ -134,11 +152,15 @@ Contributions are welcome for:
 - Bug fixes
 - Implementation of missing features described in the [ROADMAP](ROADMAP.md)
 
-For details, see [CONTRIBUTING](CONTRIBUTING.md)
+For details, see: [CONTRIBUTING](CONTRIBUTING.md)
 
 
 Contact
 -------
 
-castamos at gmail
+`<castamos@gmail.com>`
 
+---
+Copyright (C) 2025 Moisés Castañeda.
+Licensed under GPL-3.0-or-later. See LICENSE file.
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->

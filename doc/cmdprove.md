@@ -139,3 +139,10 @@ The `diff` command is used for comparing outputs.
 
 *cmdprove-assert*(1)
 
+
+# COPYRIGHT
+---
+Copyright (C) 2025 Moisés Castañeda.
+Licensed under GPL-3.0-or-later. See LICENSE file.
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+

@@ -1,4 +1,13 @@
-
+#!/bin/bash
+# 
+# Copyright (C) 2025 Moisés Castañeda
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licensed under GPL-3.0-or-later. See LICENSE file.
+#
+#   Module: filesys.sh
+#
+#   Description:
+#     Generic functions for file-system operations.
 
 
 # Function: read_file {file_path} {target_var}
