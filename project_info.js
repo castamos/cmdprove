@@ -5,7 +5,7 @@
    "tags": ["testing", "bash", "cli" ],
    "version": "0.8",
    "technologies": ["bash", "markdown"],
-   "dependencies": ["diff"],
-   "dev-dependencies": ["make", "pandoc", "codespell"],
+   "dependencies": ["bash", "diff"],
+   "dev-dependencies": ["gmake", "pandoc", "codespell"],
 }
 

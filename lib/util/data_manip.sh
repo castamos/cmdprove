@@ -66,6 +66,7 @@ function array_sort {
 #
 #   Writes the given arguments `{arg}...` into the array named `{array}`, sorted by the
 #   comparison operator `{cmp_op}`.
+#
 function sort_args_into {
   local -n sorted="$1"; shift
   local cmp_op="$1"; shift
@@ -107,5 +108,4 @@ function dict_sort_keys_by_val {
     done
   done
 }
-
 

@@ -9,6 +9,8 @@
 #   Description:
 #     Basic control for the running process.
 #
+
+# Set a global trap 
 trap 'echo "ERROR: An unrecoverable error occurred. Aborted." >&2; exit 3' EXIT
 
 # Finishes program execution gracefully.

@@ -11,6 +11,10 @@
 #
 
 
+# Function: repeat_string {string} {count}
+#
+#   Writes, to stdout, {string} repeated {count} times.
+#
 function repeat_string {
   local string="$1"
   local count="$2"
@@ -25,6 +29,11 @@ function repeat_string {
 }
 
 
+# Function: prefix_lines {prefix} {text}
+#
+#   Writes, to stdout, each line of the (possibly multi-line) {text}, prefixed by
+#   {prefix}.
+#
 function prefix_lines {
   local prefix="$1"
   local text="$2"
@@ -36,8 +45,10 @@ function prefix_lines {
 }
 
 
-# Copies `stdin` to `stdout` but omits a trailing new-line character
-# (if exists) from the last line.
+# Function: chomp
+#
+#   Copies `stdin` to `stdout` but omits a trailing new-line character (if exists) from
+#   the last line.  For memory-efficiency, processing is done line-by-line.
 #
 chomp() {
 	local last_content=""
@@ -77,5 +88,4 @@ chomp() {
     printf "%s" "$last_content"
   fi
 }
-
 

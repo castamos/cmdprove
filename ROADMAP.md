@@ -9,6 +9,13 @@ The `advbash` module system provides cleaner module management for Bash programs
 also provides generic utility functions that can be used to simplify the code of this
 project.
 
+## Add unit and integration tests for the test framework itself
+
+Currently, the only existing tests are the code examples in the documentation, these are
+good integration tests; however more tests are needed to fully cover the test framework,
+especially negative tests to ensure the framework correctly identifies and reports any
+failure in tests.
+
 ## Make output fully TAP compliant
 
 This will help integrate this test framework into automated pipelines.

@@ -65,13 +65,18 @@ function _compare_files {
 }
 
 
-# Function: create_temp_dir
+# Function: create_temp_dir [ {name_template} ]
 #
-#   Creates a temporary directory, trying with different methods.
+#   Creates a temporary directory.
+#   If given, the directory name is based on {name_template}.
+#
+#   Different methods are tried for creating the directory:
+#     - mktemp command
+#     - /tmp/{datetime-based-name}
 #
 function create_temp_dir()
 {
-  ( # Execute all commands in a subshell with stderr closed to reduce noise )
+  if ( # Execute all commands in a subshell with stderr closed to reduce noise
     exec 2>&- 
 
     template="$1"
@@ -87,15 +92,27 @@ function create_temp_dir()
     elif dir="/tmp/$template/`date +%s`" && [ !-d "$dir" ] && mkdir "$dir"; then
       echo "$dir"
     else
-      exit 1 
+      exit 1  # Exiting from a subshell is like a return statement.
     fi
-  ) || (
-    echo "ERROR: Failed to create temp dir" >&2
-    exit 1
-  )
+  ); then
+    return 0
+  fi
+
+  echo "ERROR: Failed to create temp dir" >&2
+  return 1
 }
 
 
+# Function: get_unique_file {name} {ext}
+#
+#   Attempts to generate a name for a non-existent file (hence "unique").
+#   The generated file name is of the form:
+#     
+#     {name}{NN}.{ext}
+#
+#   Where {name} can be a path with directory components, and {NN} is the smallest
+#   two-digit zero-padded decimal number that makes the path unique.
+#
 function get_unique_file {
   local name="$1"
   local ext="$2"
@@ -105,9 +122,12 @@ function get_unique_file {
     local candidate=`printf '%s%02d%s' "$name" $i "$ext"`
     if [ ! -e "$candidate" ]; then
       echo "$candidate" 
-      return
+      return 0
     fi
   done
 
-  test_error "TEST_ERROR: Could not determine a unique file name after $max_files attempts."
+  echo "ERROR: Could not determine a unique file name for '$name*.$ext'" \
+       "after $max_files attempts." >&2
+  return 1
 }
+

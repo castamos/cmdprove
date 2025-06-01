@@ -10,7 +10,10 @@
 #     Entry-point functions for the test framework.
 #
 
-# Executes each test passed as argument in the command line
+# Function: run_all {test_file}...
+#
+#   Executes each test file passed as argument.
+#
 function run_all {
   parse_cmdline "$@"
 
@@ -46,7 +49,9 @@ function run_all {
 }
 
 
-# Executes a single test file in a subshell.
+# Function: run_test {test_file}
+#
+#   Executes a single test file in a subshell.
 #
 function run_test {
   local script="$1"
@@ -86,11 +91,19 @@ function run_test {
 }
 
 
+# Callback: _before_test_script
+#
+#   This function is executed before each test script.
+#
 function _before_test_script {
   :
 }
 
 
+# Callback: _after_test_script
+#
+#   This function is executed after each test script.
+#
 function _after_test_script {
   local script_path="$1"
   local -a test_functions
@@ -104,3 +117,4 @@ function _after_test_script {
     _test_control end_subtest
   done
 }
+

@@ -85,4 +85,3 @@ function get_matching_functions {
   dict_sort_keys_by_val 'func_line' '-gt' 'matching_func_list'
 }
 
-

@@ -40,8 +40,10 @@ function describe {
 }
 
 
-# Runs a command and checks its outputs.
-# (See help_content.sh for the full explanation.)
+# Function: assert [-d] {description} [Options] -- {command}...
+#
+#   Runs a command and checks its outputs.
+#   (See help_content.sh for the full explanation.)
 #
 function assert {
   local test_name='test'      # Set from env var TEST_NAME
