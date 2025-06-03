@@ -105,25 +105,35 @@ superior is available.  A few external utilities are also required, for details 
 Build Instructions
 ------------------
 
-The test framework is contained on a single file, therefore no actual processing of the
-source code is needed.  However, [pandoc](https://pandoc.org/) is used to generate
-documentation as Man Pages (and in other formats).  The `Makefile` also contains some
-targets for spell-checking based on the
-[codespell](https://github.com/codespell-project/codespell) utility.
+## Requirements
 
+- [pandoc](https://pandoc.org/) is used to format the documentation (required for building).
+- [rsync](https://rsync.samba.org/) is used for the installation step.
 
-`make doc`
-: Generates Man Pages and docs in other formats.
+To install the dependencies on Debian (and derivatives), just run:
+  ```bash
+  sudo apt install pandoc rsync
+  ```
 
-`make test`
-: Runs tests for the test framework, including running the examples extracted from the
-  documentation (via the included `mdextract` tool).
+Building
+--------
 
-`make check-spell`
-: Runs `codespell` on all the files in the project and prints a list of misspelled words.
-  Note that `codespell`'s checks are heuristic and non-exhaustive.
+A `Makefile` is provided for building/testing/installing this project.
+To do so, run the following commands at the project's root:
 
-All generated files end up inside the `build/` directory, for details see the `Makefile`.
+  ```bash
+  make          # Requires `pandoc`
+  make test
+  make install  # Requires `rsync`
+  ```
+
+By default, installation is done under `~/.local`; to change that, run:
+  ```bash
+  make install INSTALL_PREFIX=/some/dir
+  ```
+Replacing `/some/dir` by your desired installation directory, such as `/usr/bin`.
+
+For details, see [BUILD.md](BUILD.md).
 
 
 License
@@ -140,6 +150,7 @@ PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
 cmdprove. If not, see <https://www.gnu.org/licenses/>.
+
 
 See top-level file: [LICENSE](LICENSE).
 

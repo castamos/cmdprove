@@ -1,44 +1,12 @@
 # Copyright (C) 2025 Moisés Castañeda
 # SPDX-License-Identifier: GPL-3.0-or-later
-#
 # Licensed under GPL-3.0-or-later. See LICENSE file.
 #
-# Usage:
-#
-#   make all          # Builds everything necessary for installation (default target).
-#   make test         # Runs all tests, including running the doc examples.
-#   make install      # Installs the program and documentation under `INSTALL_PREFIX`
-#   make clean        # Deletes everything generated.
-#
-#   # Fine grained targets:
-#   make exes         # Generates (copies) executables and libraries to the build dir
-#   make doc          # Generates man pages and docs in other formats.
-#   test-examples     # Runs the code in the examples
-#   run-tests         # Runs integration tests
-#   check-spell       # Checks the spelling of all source files in the project
-#
-# Output:
-#
-#   Everything this Makefile generates ends up inside `$(BUILD_DIR)` (i.e. `build/`).
-#
-# External Dependencies:
-#
-#   `pandoc`    to format the documentation.
-#   `rsync`     to install all the files
-#   `codespell` to check spelling
-#
-# Variables accepted in the command line:
-#
-#   INSTALL_PREFIX  - Directory prefix for the installation
-#   PANDOC_EXE      - Path for the `pandoc` program
-#   ...             - Similarly for the other external dependencies
-#
-#   Can be set like `make {target} {var}={value}...`
-#   For example:
-#
-#     make install INSTALL_PREFIX=/opt/myprog RSYNC_EXE=/usr/remote/bin/rsync
+#   This is the main Makefile for building this project.
+#   For detailed usage see `BUILD.md`
 #
 
+# Ensure we are running under GNU Make
 ifdef MAKE_VERSION
   $(info GNU Make version $(MAKE_VERSION))
 else
@@ -52,7 +20,7 @@ SHELL := $(shell which bash)
 CONFIG_FILE ?= config.mk
 include $(CONFIG_FILE)
 
-# Check required variables are set in the config file:
+# Check that required variables are set in the config file:
 ifeq ($(strip $(PROJ_NAME)),) 
   $(error Missing variable: PROJ_NAME in '$(CONFIG_FILE)')
 endif
@@ -63,7 +31,8 @@ endif
 # Installation directory
 INSTALL_PREFIX ?= $(HOME)/.local
 
-# External utilities needed by this Makefile
+# External utilities needed by this Makefile.
+# Expected to be in the PATH, can be overwritten to point anywhere.
 PANDOC_EXE    ?= pandoc#
 CODESPELL_EXE ?= codespell#
 RSYNC_EXE     ?= rsync#
@@ -121,27 +90,68 @@ check_path_in_var = \
 
 .PHONY : all exes doc test clean
 
+
+# Target: all
+#
+#   Default target for building everything that is needed for installation.
+#
 all: exes doc install-manifest
 
-doc: $(MAN_TARGETS) $(TXT_TARGETS)
 
-test: test-examples run-tests check-spell
+# Target: test
+#
+#   Runs all available tests.
+#
+test: test-examples run-tests
 
+
+# Target: install
+#
+#   Installs all the project's files under `$INSTALL_PREFIX`.
+#
 install: $(CMDPROVE_EXE)
 	rsync -av --no-perms --ignore-times "$(DEST_DIR)/" "$(INSTALL_PREFIX)/"
 	@$(call check_path_in_var,$(INSTALL_PREFIX)/bin,PATH)
 	@$(call check_path_in_var,$(INSTALL_PREFIX)/share/man,MANPATH)
 
 
-# Our executables are shell scripts, just copy them
+# Target: clean
+#
+#   Deletes everything that was generated. Since all generated files are under
+#   `$BUILD_DIR`, just wipe out the whole dir.
+#
+clean:
+	rm -rf $(BUILD_DIR)
+
+
+# Target: exes
+#
+#   Generates executables. Our executables are shell scripts, so just copy them to the
+#   right output directory.
+#
 exes: | $(DEST_BIN)/ $(DEST_LIB)/ $(DEST_UNINSTALL)/
 	cp -aR bin/* "$(DEST_BIN)/"
 	cp -aR lib/* "$(DEST_LIB)/"
 	cp -a uninstall "$(DEST_UNINSTALL)"
 
-clean:
-	rm -rf $(BUILD_DIR)
 
+# Target: doc
+#
+#   Generate documentation as man pages and plain-text, from Markdown sources. This is
+#   needed for `all`, since help subcommands for the project's programs use the
+#   plain-text generated documentation.
+#
+doc: $(MAN_TARGETS) $(TXT_TARGETS)
+
+
+# Target: install-manifest
+#
+#   Generates a file `$INSTALL_MANIFEST` intended for performing clean uninstallations.
+#   This file lists, one per line, each file and directory that will be installed /
+#   uninstalled.  The list is provided in depth-first order, so that deleting each file /
+#   dir in the listed order results in subsequent empty dirs (at least for a pristine
+#   installation).
+#
 install-manifest: | $(DEST_UNINSTALL)/
 	touch $(INSTALL_MANIFEST)
 	find "$(DEST_DIR)" \
@@ -162,7 +172,7 @@ test-examples : $(README) $(DOC_SOURCES) | $(DEST_DOC_EXAMPLES_DIR)/
 
 # Target: run-tests
 #
-#    Run the project's tests
+#   Runs the project's unit/integration tests.
 #
 run-tests :
 	$(CMDPROVE_EXE) $(SRC_TEST_DIR)/test_*.sh
@@ -170,7 +180,7 @@ run-tests :
 
 # Target: check-spell
 #
-#   Check spelling for all the files in the project (using misspelling patterns).
+#   Checks spelling for all the files in the project (using misspelling patterns).
 #   This is non-interactive, just provides a report.
 #
 check-spell:
@@ -179,7 +189,7 @@ check-spell:
 
 # Target: fix-spell
 #
-#   Run the spell checker in interactive mode to help fixing spelling.
+#   Runs the spell checker in interactive mode to help fixing spelling.
 #
 fix-spell:
 	$(FIX_SPELL_CMD)
