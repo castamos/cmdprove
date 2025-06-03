@@ -37,16 +37,16 @@ function array_pop {
 
 # Function: array_sort {array} {cmp_op}
 #
-#		Sorts, in place, the array named `{array}` by its values according to the comparison
-#		operator {cmp_op}.
+#   Sorts, in place, the array named `{array}` by its values according to the comparison
+#   operator {cmp_op}.
 #
 function array_sort {
-	local -n array="$1"
+  local -n array="$1"
   local cmp_op="$2"
 
   is_sort_op "$cmp_op" || abort "Invalid comparison operator: '$cmp_op'"
 
-	local i j n="${#array[@]}"
+  local i j n="${#array[@]}"
 
   # Bubble sort
   for ((i = 0; i < n-1; i++)); do

@@ -18,16 +18,16 @@
 
 # Function: note [-l {indent_level}] {comment}
 #
-#		Writes a {comment} in the test output.
+#   Writes a {comment} in the test output.
 #
 function note {
-	local indent_level=0
+  local indent_level=0
   if [ $# -gt 1 ] && [ "$1" == '-l' ]; then
     indent_level="$2"; shift 2
   fi
   local prefix="# $(repeat_string '  ' $indent_level)"
   local note_prefixed="$(prefix_lines "$prefix" "$*")"
-	_test_control print_indent "$note_prefixed"
+  _test_control print_indent "$note_prefixed"
 }
 
 
@@ -287,14 +287,14 @@ function assert {
   do
     local check_type="${expected_cmp[$check]}"
 
-  	if $preserve_trailing_newlines; then
+    if $preserve_trailing_newlines; then
       # Direct assignment to keep trailing newlines:
-    	local exp_str="${expected_value[$check]}"
+      local exp_str="${expected_value[$check]}"
     else
       # The variable assignment chomps the assigned value:
-    	local exp_str="$(echo -n "${expected_value[$check]}")"
+      local exp_str="$(echo -n "${expected_value[$check]}")"
     fi
-		
+    
     local dif=$(_compare_files "$check_type" <(echo -n "$exp_str") "${outfile[$check]}")
 
     if [ -z "$dif" ]; then

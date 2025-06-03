@@ -51,18 +51,18 @@ function prefix_lines {
 #   the last line.  For memory-efficiency, processing is done line-by-line.
 #
 chomp() {
-	local last_content=""
-	local empty_line_count=0
-	local line
-	local have_content=false
-	
-	# Process input line by line
-	while IFS= read -r line || [ -n "$line" ]
+  local last_content=""
+  local empty_line_count=0
+  local line
+  local have_content=false
+  
+  # Process input line by line
+  while IFS= read -r line || [ -n "$line" ]
   do
-		if [ -z "$line" ]; then
-			# Empty line - increment counter
-			empty_line_count=$((empty_line_count + 1))
-	    continue
+    if [ -z "$line" ]; then
+      # Empty line - increment counter
+      empty_line_count=$((empty_line_count + 1))
+      continue
     fi
 
     # Otherwise, we found a non-empty line
