@@ -24,14 +24,14 @@ function get_matching_functions {
   local -n matching_func_list="$3"
 
   # Save state for the `extdebug` shell option and set it to get extended function info.
-  shopt -q extdebug
-  local orig_extdebug=$?
+  local orig_extdebug=false
+  shopt -q extdebug || orig_extdebug=true
   shopt -q -s extdebug
 
   # Get the list of all declared functions whose name matches the given pattern.
   local -a func_list
   local -a func_entry
-  while read -r -a func_entry; do
+  while read -r -a func_entry || [[ -n "${func_entry[*]}" ]]; do
     local func_name="${func_entry[2]:-}"
     case "$func_name" in $func_name_patn)
       func_list+=( "$func_name" ) 
@@ -78,10 +78,10 @@ function get_matching_functions {
   done
 
   # Restore `extdebug` option
-  if [ "$orig_extdebug" = 1 ]; then
+  if $orig_extdebug; then
     shopt -q -u extdebug
   fi
 
-  dict_sort_keys_by_val 'func_line' '-gt' 'matching_func_list'
+  dict_sort_keys_by_val 'func_line' '-lt' 'matching_func_list'
 }
 

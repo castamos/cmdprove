@@ -69,9 +69,11 @@ function assert {
     [ret]=
   )
   expected_type=(
-    [out]='string'
-    [err]='string'
-    [ret]='string'
+    # Set to 'ignore' if the corresponding flag is set;
+    # otherwise set to the empty string
+    [out]="${TEST_IGNORE_STDOUT:+ignore}"
+    [err]="${TEST_IGNORE_STDERR:+ignore}"
+    [ret]="${TEST_IGNORE_RETCODE:+ignore}"
   )
   expected_value=(
     [out]=''
@@ -98,12 +100,13 @@ function assert {
   local arg_count=0
   local value_needed=false
   local preserve_trailing_newlines=false
+  local fail_on_error=false
 
   for arg in "$@"; do
 
     arg_count=$(( arg_count + 1 ))
 
-    if [ "$arg_count" = 1 ]; then
+    if [[ "$arg_count" = 1 ]]; then
       case "$arg" in
         -*)
           # An option was passed as first argument; do nothing here,
@@ -121,7 +124,6 @@ function assert {
     local key_expect=
 
     if ! $value_needed; then
-
       case "$arg" in
         --)
           # Explicit start of command (should be the first case)
@@ -132,6 +134,15 @@ function assert {
         -p )  # Flag
           preserve_trailing_newlines=true
           ;;
+        -f )
+          fail_on_error=true
+          ;;
+
+        # Flags for excluding checks, processed below
+        -oi) expected_type[out]='ignore' ;;
+        -ei) expected_type[err]='ignore' ;;
+        -ri) expected_type[ret]='ignore' ;;
+
         -*)
           # The rest of the options require a value
           opt_key="$arg"
@@ -152,13 +163,13 @@ function assert {
       case "$opt_key" in
         -d ) description="$arg" ;;
           
-        -o | -e | -r ) exp_type='string'  ; exp_cmp='diff' ;;&
-        -O | -E | -R ) exp_type='file'    ; exp_cmp='diff' ;;&
-        -op | -ep )    exp_type='string'  ; exp_cmp='pattern' ;;&
+        -o  | -e  | -r ) exp_type='string'  ; exp_cmp='diff'    ;;&
+        -O  | -E  | -R ) exp_type='file'    ; exp_cmp='diff'    ;;&
+        -op | -ep | -rp) exp_type='string'  ; exp_cmp='pattern' ;;&
 
         -o | -op | -O) key_expect=out ;;
         -e | -ep | -E) key_expect=err ;;
-        -r | -R) key_expect=ret ;;
+        -r | -rp | -R) key_expect=ret ;;
 
         *)
           test_error "Invalid option for 'assert()': '$opt_key'"
@@ -175,7 +186,7 @@ function assert {
 
   if [ "${#test_command[@]}" == 0 ]; then
     test_error "Please specify a command to test."
-    return;
+    return 2
   fi
 
   debug "Command to test: ${test_command[@]}"
@@ -184,12 +195,12 @@ function assert {
 
   if $value_needed; then
     test_error "Missing value for option: '$opt_key'"
-    return
+    return 2
   fi
 
   if [ -z "$description" ]; then
     test_error "Please specify a description for the test case."
-    return;
+    return 2
   fi
 
   _test_control begin_subtest "$description"
@@ -203,10 +214,13 @@ function assert {
       continue
     fi
 
-    exp_type="${expected_type[$key_expect]}"
+    # By default, do a literal string comparison
+    exp_type="${expected_type[$key_expect]:-string}"
     exp_arg="${expected_arg[$key_expect]}"
 
     case "$exp_type" in
+      ignore)
+        ;;
       string|pattern)
         expected_value[$key_expect]="$exp_arg"
         ;;
@@ -223,12 +237,12 @@ function assert {
 
         if [ $? != 0 ]; then
           test_error "Failed to read masterfile (type $key_expect) '$exp_arg': $!"
-          return
+          return 2
         fi
         ;;
       *)
         test_error "Invalid expected value type: '$exp_type'"
-        return
+        return 2
     esac
   done
 
@@ -253,38 +267,56 @@ function assert {
   debug "STDERR will be saved to: '${outfile[err]}'."
   debug "RETCODE will be saved to: '${outfile[ret]}'."
 
-  # Execute the command to test in a subshell to avoid interfering with the
-  # testing framework. If stdin is provided to the invocation of this `assert`
-  # function, it can be consumed by $command, automatically.
+  # Execute the command to test.
+  #
+  # If stdin is provided to the invocation of this `assert` function, it can be consumed
+  # by $command, automatically.
+  #
+  # It would be safer to execute the command in a subshell; however, since commands can
+  # be shell functions with side effects, the subshell would prevent the test scripts to
+  # observe the side effects.
+  #
   # TODO: include timeout
   # TODO: verify if special characters in $command do not cause problems
+  #
   debug "Running test command ..."
+  local ret_code=0
 
   if $preserve_trailing_newlines; then
-    ( "${test_command[@]}" \
+    "${test_command[@]}" \
       1> "${outfile[out]}" \
       2> "${outfile[err]}" \
-    )
+      || ret_code=$?
   else
-    ( "${test_command[@]}" \
+    "${test_command[@]}" \
       1> >( chomp > "${outfile[out]}" ) \
       2> >( chomp > "${outfile[err]}" ) \
-    )
+      || ret_code=$?
   fi
 
   # Save exit code
-  local ret_code="$?"
-  echo "$?" > "${outfile[ret]}"
+  echo -n "$ret_code" > "${outfile[ret]}"
 
-  if [ "$ret_code" == "${expected_value[ret]}" ]; then
-    _test_control set_pass 'Return code'
-  else
-    _test_control set_fail 'Return code'
-    note "Got return code '$ret_code', expected '${expected_value[ret]}'."
-  fi
-
-  for check in out err
+  for check in out err ret
   do
+    local check_name      # Display name for this check
+
+    if [[ "$check" == 'ret' ]]; then
+      check_name='exit code'
+    else
+      check_name="std$check"
+    fi
+
+    if [[ "${expected_type[$check]}" == 'ignore' ]]; then
+      # Ignore this check but show the output if non-empty
+      local outval="$(cat "${outfile[$check]}")"
+      if [[ "$outval" != *(0) ]]; then
+        note "Ignoring non-empty $check_name, content was:"
+        note "$outval"
+      fi
+      continue
+    fi
+
     local check_type="${expected_cmp[$check]}"
 
     if $preserve_trailing_newlines; then
@@ -295,14 +327,25 @@ function assert {
       local exp_str="$(echo -n "${expected_value[$check]}")"
     fi
     
+    if [[ "$check" == 'ret' && "$check_type" != 'pattern' ]]; then
+      # Direct numeric comparison to decrease verbosity
+      local outval="$(cat "${outfile[$check]}")"
+      if [[ "$exp_str" == "$outval" ]]; then
+        _test_control set_pass "$check_name"
+      else
+        _test_control set_fail "$check_name: $outval (Expected: $exp_str)"
+      fi
+      continue
+    fi
+
     local dif=$(_compare_files "$check_type" <(echo -n "$exp_str") "${outfile[$check]}")
 
     if [ -z "$dif" ]; then
-      _test_control set_pass "std$check"
+      _test_control set_pass "$check_name"
     else
-      _test_control set_fail "std$check"
+      _test_control set_fail "$check_name"
       note ''
-      note "Unexpected std$check:"
+      note "Unexpected $check_name:"
       note -l 1 "----------"
       note -l 1 "$dif"
       note -l 1 "----------"
@@ -311,7 +354,60 @@ function assert {
     fi
   done
 
-  _test_control end_subtest
+  # `end_subtest` exits with the number of failures
+  local fail_count=0
+  _test_control end_subtest || fail_count=$?
+
+  if [[ "$fail_count" -gt 0 ]] && $fail_on_error; then
+    return "$fail_count"
+  else
+    return 0
+  fi
+}
+
+
+# Function: is {desc} [-f] [--] {left_value} {right_value}
+#
+#   Compares {left_value} and {right_value} for equality.
+#
+# Exit code:
+#   - Zero, even when the comparison fails; unless -f is given.
+#
+function is {
+  local pos=()
+  local fail_on_error=false
+
+  local arg
+  for arg in "$@"; do
+    shift
+    case "$arg" in
+      --)
+        pos+=( "$@" )
+        break;
+      ;;
+      -f)
+        fail_on_error=true
+      ;;
+      -*)
+        test_error "Invalid argument for 'is': '$arg'"
+        return 2
+      ;;
+      *)
+        pos+=( "$arg" )
+    esac
+  done
+
+  if [[ "${#pos[@]}" -ne 3 ]]; then
+    test_error "Expected 3 positional arguments for 'is', ${#pos[@]} were given: ${pos[@]}"
+    return 2
+  fi
+
+  if ! assert "${pos[0]}" -f -- test "${pos[1]}" = "${pos[2]}"; then
+    note "'${pos[1]}' != '${pos[2]}'"
+    $fail_on_error && return 1
+  fi
+
+  return 0
 }
 
 
@@ -319,6 +415,9 @@ function assert {
 #
 #  Used internally to keep track of test execution (counts for passed/failed subtests,
 #  etc).
+#
+# Exit code:
+#   - The number of failures
 #
 function _test_control {
   # Define globals if not present:

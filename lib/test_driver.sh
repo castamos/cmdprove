@@ -64,17 +64,19 @@ function run_test {
     script="./$script"
   fi
   
-  note "[RUNNING: $script]"
-
-  # On a separate shell process, source the test script and then execute
-  # our custom entry point:
+  export TEST_SOURCE_DIR="$(dirname "$script")"
 
   local pre_cmds="$(IFS=';' ; echo "${pretest_commands[*]}")"
 
+  # On a separate shell process, source the test script and then execute
+  # our custom entry point:
+  note "[RUNNING: $script]"
   "$SHELL" -c "
     $pre_cmds
     _before_test_script
-    source '$script'
+    if ! source '$script'; then
+      _test_control set_fail 'Non-zero retcode from sourced script: $script'
+    fi
     _after_test_script '$script'
   "
   local rc=$?
@@ -93,28 +95,39 @@ function run_test {
 
 # Callback: _before_test_script
 #
-#   This function is executed before each test script.
+#   This function is executed before each test script,
+#   inside the test subshell.
 #
 function _before_test_script {
-  :
+  set -Eeu
+  set -o pipefail
+  shopt -s extglob
 }
 
 
 # Callback: _after_test_script
 #
-#   This function is executed after each test script.
+#   This function is executed after each test script,
+#   inside the test subshell.
 #
 function _after_test_script {
   local script_path="$1"
+
   local -a test_functions
   get_matching_functions "$script_path" "$TEST_FUNC_PATTERN" 'test_functions'
 
+  local failure_count=0
   local test_function
   for test_function in "${test_functions[@]}"; do
     _test_control begin_subtest "$test_function"
-    echo
-    "$test_function"
-    _test_control end_subtest
+
+    # Execute test function, ignoring its return code
+    if ! "$test_function"; then
+      _test_control set_fail "Non-zero retcode from test function: '$test_function'"
+    fi
+    _test_control end_subtest || : $((failure_count+=$?))
   done
+
+  return "$failure_count"
 }
 

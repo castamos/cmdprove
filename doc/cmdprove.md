@@ -115,8 +115,18 @@ not yet fully TAP compliant.
 `TEST_OUT_DIR`
 : Where to write test output, if not provided a temporary directory is used.
 
+`TEST_SOURCE_DIR`
+: Directory containing the current test script under execution.
+
 These variables are always available in test files.
 
+In addition, tests are executed with the following shell options set:
+
+  ```bash
+  set -Eeu
+  set -o pipefail
+  shopt -s extglob
+  ```
 
 # EXTERNAL DEPENDENCIES
 

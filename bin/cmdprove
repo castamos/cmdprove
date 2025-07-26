@@ -115,9 +115,13 @@ function parse_cmdline {
 export TEST_DEBUG
 export TEST_OUT_DIR
 export TEST_FUNC_PATTERN
+export TEST_IGNORE_STDERR
+export TEST_IGNORE_STDOUT
+export TEST_IGNORE_RETCODE
 #
 export -f describe
 export -f assert
+export -f is
 export -f note
 export -f debug
 export -f test_error
