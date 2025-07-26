@@ -32,14 +32,14 @@ function debug {
 
 
 # Writes a test error message and terminates the program.
-function test_error() {
+function test_error {
   echo "TEST ERROR: $@" >&2
   terminate 3
 }
 
 
 # Writes a fatal error message and terminates the program.
-function abort() {
+function abort {
   echo "ERROR: $@" >&2
   terminate 2
 }

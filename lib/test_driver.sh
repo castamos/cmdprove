@@ -10,6 +10,12 @@
 #     Entry-point functions for the test framework.
 #
 
+# Explicit map of individual subtests to run, given as:
+#   {subtest_name} => {test_script}
+# If empty, all tests will be run
+declare -Ag subtest_inclusion_list
+
+
 # Function: run_all {test_file}...
 #
 #   Executes each test file passed as argument.
@@ -58,13 +64,29 @@ function run_test {
 
   [ -f "$script" ] || test_error "Test file not found: '$script'."
 
+  # From the inclusion list get all the subtests corresponding to the
+  # current script (if any)
+  local include_subtests=()
+  local subtest
+  for subtest in "${!subtest_inclusion_list[@]}"; do
+    if [[ "${subtest_inclusion_list[$subtest]}" == "$script" ]]; then
+      include_subtests+=( "$subtest" )
+    fi
+  done
+
   # Set explicit './' path prefix for relative script paths, so that
   # `source` finds the right script:
   if [ "${script:0:1}" != '/' ]; then
     script="./$script"
   fi
   
+  # Set test-script-specific environment: 
+  export TEST_SOURCE_PATH="$script"
   export TEST_SOURCE_DIR="$(dirname "$script")"
+  if [[ "${#include_subtests[@]}" -gt 0 ]]; then
+    # Export as a single string
+    export TEST_INCLUDE_SUBTESTS="${include_subtests[*]}"
+  fi
 
   local pre_cmds="$(IFS=';' ; echo "${pretest_commands[*]}")"
 
@@ -85,7 +107,8 @@ function run_test {
   case "$rc" in
     0) echo "All tests passed in: '$script'" ;;
     1) echo "Some tests failed in: '$script'" ;;
-    3) echo "Test script did not finish (or missing invocation to 'done_testing')" ;;
+    3) echo "Test script did not finish gracefully" \
+            "(or missing invocation to 'done_testing')." ;;
     *) echo "Unknown error when executing test script (retcode: $rc)." ;;
   esac
 
@@ -116,17 +139,52 @@ function _after_test_script {
   local -a test_functions
   get_matching_functions "$script_path" "$TEST_FUNC_PATTERN" 'test_functions'
 
+  # Check if a list of specific subtests to run was given
+  local subtest_list="${TEST_INCLUDE_SUBTESTS:-}"
+  local subtests=( $subtest_list )
+  local -A executed_subtests
+  local subtest
+  for subtest in "${subtests[@]}"; do
+    executed_subtests[$subtest]=false
+  done
+
+  local do_filter=false
+  [[ "${#subtests[@]}" -gt 0 ]] && do_filter=true
+
   local failure_count=0
   local test_function
-  for test_function in "${test_functions[@]}"; do
+  for test_function in "${test_functions[@]}"
+  do
+
+    if $do_filter; then
+      if [[ -v executed_subtests[$test_function] ]]; then
+        # Flag the function as executed
+        executed_subtests[$test_function]=true
+      else
+        # Subtest is not in the inclusion list
+        continue
+      fi
+    fi
+
     _test_control begin_subtest "$test_function"
 
-    # Execute test function, ignoring its return code
+    # Execute test function, and check its return code
     if ! "$test_function"; then
       _test_control set_fail "Non-zero retcode from test function: '$test_function'"
     fi
     _test_control end_subtest || : $((failure_count+=$?))
   done
+
+  # Check if inclusion list was fulfilled
+  if $do_filter; then
+    for subtest in "${subtests[@]}"; do
+      if ! ${executed_subtests[$subtest]}; then
+        test_error \
+          "'$subtest': Subtest in inclusion list not found in script: '$script_path'"
+        : $((failure_count++))
+      fi
+    done
+  fi
 
   return "$failure_count"
 }

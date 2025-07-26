@@ -63,10 +63,33 @@ pretest_commands=( "set -u" )
 # Parses the command line, setting globals.
 #
 function parse_cmdline {
+
+  local wait_arg=
   local arg
+  local last_test_script=
+
   for arg in "$@"; do
     shift
+
+    if [[ -n "$wait_arg" ]]; then
+      case "$wait_arg" in
+        include_test)
+          if [[ -z "$last_test_script" ]]; then
+            abort "Invalid arguments: --only should appear after a test script."
+          fi
+          subtest_inclusion_list[$arg]="$last_test_script"
+          ;;
+        *)
+          abort "Internal Error: Bad wait_arg: '$wait_arg'"
+      esac
+      wait_arg=
+      continue
+    fi
+
     case "$arg" in
+      -o|--only)
+        wait_arg=include_test
+      ;;
       --debug)
         TEST_DEBUG=1
       ;;
@@ -102,15 +125,18 @@ function parse_cmdline {
       ;;
       *)
         test_file_list+=( "$arg" )
+        last_test_script="$arg"
       ;;
     esac
   done
+
+  if [[ -n "$wait_arg" ]]; then
+    abort "Missing argument for option: $arg"
+  fi
 }
 
 
-
-# Export all the variables and functions needed to be available
-# for test scripts.
+# Export all the variables and functions needed in test scripts.
 #
 export TEST_DEBUG
 export TEST_OUT_DIR
@@ -127,6 +153,7 @@ export -f debug
 export -f test_error
 export -f enable_tracing
 export -f abort
+export -f terminate
 #
 export -f chomp
 export -f prefix_lines

@@ -81,11 +81,22 @@ into test functions. All functions whose name begins with `test_` are executed a
 
 # OPTIONS
 
-`--help`
-: Print this message and exit.
+`-o`, `--only {subtest}`
+: Execute only the given subtest name (test function name) in the previously specified
+  test script.
+: Can be specified multiple times; each instance of this option applies to the previous
+  test script in the argument list (therefore cannot precede the argument that specifies
+  the first test script).
+: Example: `cmdprove t1.sh -o test_in_t1 -o test_also_in_t1 test2.sh -o test_in_test2`
 
 `--debug`
 : Run the tests in debug mode, printing additional messages.
+
+`--trace-test`
+: Enable tracing for the test execution (for debugging)
+
+`--step-test`
+: Pause before each command executed by tests (for debugging)
 
 `--trace-driver`
 : Enable tracing for the test driver (for debugging)
@@ -93,11 +104,8 @@ into test functions. All functions whose name begins with `test_` are executed a
 `--step-driver`
 : Pause before each command executed by the test driver (for debugging)
 
-`--trace-test`
-: Enable tracing for the test execution (for debugging)
-
-`--step-test`
-: Pause before each command executed by tests (for debugging)
+`--help`
+: Print this message and exit.
 
 
 # OUTPUT FORMAT
@@ -109,16 +117,25 @@ not yet fully TAP compliant.
 
 # ENVIRONMENT
 
+## Read from the external environment
+
 `TEST_DEBUG`
 : Setting this variable to 1 is equivalent to passing option '--debug'.
 
 `TEST_OUT_DIR`
 : Where to write test output, if not provided a temporary directory is used.
 
+
+## Set by the framework for each test script
+
+These variables are always available in the environment of test scripts.
+
+`TEST_SOURCE_PATH`
+: Path for the current test script under execution.
+
 `TEST_SOURCE_DIR`
 : Directory containing the current test script under execution.
 
-These variables are always available in test files.
 
 In addition, tests are executed with the following shell options set:
 
