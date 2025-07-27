@@ -203,8 +203,6 @@ function assert {
     return 2
   fi
 
-  _test_control begin_subtest "$description"
-
   # Populate expected values for direct comparison:
   #
   for key_expect in out err ret; do
@@ -296,6 +294,7 @@ function assert {
 
   # Save exit code
   echo -n "$ret_code" > "${outfile[ret]}"
+  local failed_checks=()
 
   for check in out err ret
   do
@@ -330,20 +329,17 @@ function assert {
     if [[ "$check" == 'ret' && "$check_type" != 'pattern' ]]; then
       # Direct numeric comparison to decrease verbosity
       local outval="$(cat "${outfile[$check]}")"
-      if [[ "$exp_str" == "$outval" ]]; then
-        _test_control set_pass "$check_name"
-      else
-        _test_control set_fail "$check_name: $outval (Expected: $exp_str)"
+      if [[ "$exp_str" != "$outval" ]]; then
+        failed_checks+=( "$check_name" )
+        note "$check_name: $outval (Expected: $exp_str)"
       fi
       continue
     fi
 
     local dif=$(_compare_files "$check_type" <(echo -n "$exp_str") "${outfile[$check]}")
 
-    if [ -z "$dif" ]; then
-      _test_control set_pass "$check_name"
-    else
-      _test_control set_fail "$check_name"
+    if [[ -n "$dif" ]]; then
+      failed_checks+=( "$check_name" )
       note ''
       note "Unexpected $check_name:"
       note -l 1 "----------"
@@ -354,15 +350,17 @@ function assert {
     fi
   done
 
-  # `end_subtest` exits with the number of failures
-  local fail_count=0
-  _test_control end_subtest || fail_count=$?
+  local fail_count="${#failed_checks[@]}"
 
-  if [[ "$fail_count" -gt 0 ]] && $fail_on_error; then
-    return "$fail_count"
+  if [[ "$fail_count" -eq 0 ]]; then
+    _test_control set_pass "$description"
   else
-    return 0
+    _test_control set_fail "$description"
+    note "Failed command checks: ${failed_checks[*]} (see above for details)."
+    $fail_on_error && return "$fail_count"
   fi
+
+  return 0
 }
 
 
@@ -402,8 +400,16 @@ function is {
     return 2
   fi
 
-  if ! assert "${pos[0]}" -f -- test "${pos[1]}" = "${pos[2]}"; then
-    note "'${pos[1]}' != '${pos[2]}'"
+  local desc="${pos[0]}"
+  local lvalue="${pos[1]}"
+  local rvalue="${pos[2]}"
+
+  if [[ "$lvalue" == "$rvalue" ]]; then
+    _test_control set_pass "$desc"
+    return 0
+  else
+    _test_control set_fail "$desc"
+    note "'$lvalue' != '$rvalue'"
     $fail_on_error && return 1
   fi
 
