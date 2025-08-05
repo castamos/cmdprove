@@ -264,6 +264,7 @@ function assert {
   debug "STDOUT will be saved to: '${outfile[out]}'."
   debug "STDERR will be saved to: '${outfile[err]}'."
   debug "RETCODE will be saved to: '${outfile[ret]}'."
+  TEST_LAST_STDERR_FILE="${outfile[err]}"
 
   # Execute the command to test.
   #

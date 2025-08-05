@@ -90,18 +90,59 @@ function run_test {
 
   local pre_cmds="$(IFS=';' ; echo "${pretest_commands[*]}")"
 
-  # On a separate shell process, source the test script and then execute
-  # our custom entry point:
   note "[RUNNING: $script]"
-  "$SHELL" -c "
-    $pre_cmds
-    _before_test_script
-    if ! source '$script'; then
-      _test_control set_fail 'Non-zero retcode from sourced script: $script'
-    fi
-    _after_test_script '$script'
-  "
+
+  # Duplicate our current stdout so that we can write to it directly from the command
+  # below.
+  exec {_orig_stdout_fd}>&1
+
+  local out_err
+
+  # On a separate shell process, source the test script along with instrumentation
+  # functions to control the test execution. All functions and variables needed by the
+  # instrumentation and test-assertion functions should have been marked for export at
+  # this point (that is done in `bin/cmdprove`).
+  #
+  # We want both stdout and stderr to be written to the terminal, combined for correct
+  # visualization. But we also want to capture stderr to inspect execution failures. To
+  # achieve that we have the following redirections and pipes:
+  #
+  # a) 2>&1
+  #     Connect the command's stderr to the caller's stdout, which corresponds to the
+  #     pipe's stdin, i.e, the stdin of `tee`.
+  #
+  # b) 1>&${_orig_stdout_fd}
+  #     Connect the command's stdout to the caller's file descriptor `_orig_stdout_fd`,
+  #     which is the regular stdout for the test driver, duplicated above (in practice,
+  #     this is the terminal).
+  #
+  # c) | tee >(cat >&${_orig_stdout_fd})
+  #     Write `tee`'s stdin (which corresponds to the stderr of the command) to the
+  #     following two outputs:
+  #     c.a) The caller's stdout, which is the capturing variable `out_err`
+  #     c.b) The stdin of the process substitution >(cat ...), which in turn gets copied
+  #          to the caller's file descriptor `_orig_stdout_fd`, i.e. the driver's
+  #          original stdout.
+  #
+  # Thanks to b) and c.b), the command's stdout and stderr get combined into the driver's
+  # stdout. Thanks to a) and c.a), the command's stderr also gets stored in variable
+  # `out_err`.
+  #
+  out_err=$(
+    "$SHELL" -c "
+      $pre_cmds
+      TEST_LAST_STDERR_FILE=
+      _before_test_script
+      if ! source '$script'; then
+        _test_control set_fail 'Non-zero retcode from sourced script: $script'
+      fi
+      _after_test_script '$script'
+    " 2>&1 1>&${_orig_stdout_fd} | tee >(cat >&${_orig_stdout_fd})
+  )
   local rc=$?
+
+  # Close our duplicated file descriptor
+  exec {_orig_stdout_fd}>&-
 
   # Check exit status
   case "$rc" in
@@ -111,6 +152,24 @@ function run_test {
             "(or missing invocation to 'done_testing')." ;;
     *) echo "Unknown error when executing test script (retcode: $rc)." ;;
   esac
+
+  if [[ "$rc" -ne 0 ]]; then
+    local prefix='For details, see: '
+    local line
+    while IFS= read -rs line || [[ -n "$line" ]]; do
+      case "$line" in "$prefix"*)
+        local file="${line#"$prefix"}"
+        if [[ -r "$file" ]]; then
+          echo "-----[$file]"
+          cat "$file"
+          echo
+          echo "-----"
+        else
+          log_error "Error file not found or not readable: '$file'"
+        fi
+      esac
+    done <<< "$out_err"
+  fi
 
   return "$rc"
 }
@@ -122,9 +181,35 @@ function run_test {
 #   inside the test subshell.
 #
 function _before_test_script {
+  trap '_test_script_exit_trap' EXIT
   set -Eeu
   set -o pipefail
   shopt -s extglob
+
+  # Duplicate stderr to a file descriptor reserved by the shell, so we can write to the
+  # actual process stderr from the EXIT trap, even if the exiting command has
+  # active redirections.
+  exec {_orig_stderr_fd}>&2
+}
+
+
+function _test_script_exit_trap {
+  if [[ $? -eq 0 ]]; then
+    return 0
+  fi
+
+  # The output of the following commands is redirected to the original stderr of the
+  # process.  This is necessary because we can get in this "trap" from a function that
+  # has its stderr redirected.
+  (
+    echo "ERROR: Test script execution failed."
+
+    if [[ -n "$TEST_LAST_STDERR_FILE" ]]; then
+      echo "For details, see: $TEST_LAST_STDERR_FILE"
+    fi
+  ) >&$_orig_stderr_fd 2>&1
+
+  exit 3
 }
 
 
@@ -186,6 +271,7 @@ function _after_test_script {
     done
   fi
 
-  return "$failure_count"
+  trap EXIT # Remove trap
+  [[ "$failure_count" -eq 0 ]] # Set exit status
 }
 
